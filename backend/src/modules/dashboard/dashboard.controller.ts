@@ -31,6 +31,21 @@ export class DashboardController {
     }
   }
 
+  async getMonthlyRevenueCosts(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const monthsParam = req.query.months !== undefined ? parseInt(req.query.months as string) : 6;
+      const months = isNaN(monthsParam) ? 6 : monthsParam;
+      const data = await dashboardService.getMonthlyRevenueCosts(req.user!.tenantId!, months);
+
+      res.json({
+        success: true,
+        data,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async getStoreInfo(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const storeInfo = await dashboardService.getStoreInfo(req.user!.tenantId!);

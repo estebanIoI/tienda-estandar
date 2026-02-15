@@ -301,6 +301,10 @@ class ApiService {
     return this.request<Array<{ date: string; total: number; count: number }>>(`/dashboard/sales-trend${query}`)
   }
 
+  async getMonthlyRevenueCosts(months = 6) {
+    return this.request<Array<{ month: string; revenue: number; costs: number }>>(`/dashboard/monthly-revenue-costs?months=${months}`)
+  }
+
   // Customers endpoints
   async getCustomers(params?: { page?: number; limit?: number; search?: string }) {
     const searchParams = new URLSearchParams()
@@ -455,6 +459,7 @@ class ApiService {
   async createTenant(data: {
     name: string
     slug: string
+    businessType?: string
     plan?: string
     maxUsers?: number
     maxProducts?: number
@@ -468,7 +473,7 @@ class ApiService {
     })
   }
 
-  async updateTenant(id: string, data: { name?: string; plan?: string; status?: string; maxUsers?: number; maxProducts?: number }) {
+  async updateTenant(id: string, data: { name?: string; businessType?: string; plan?: string; status?: string; maxUsers?: number; maxProducts?: number }) {
     return this.request<any>(`/tenants/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),

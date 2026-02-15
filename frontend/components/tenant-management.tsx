@@ -102,6 +102,7 @@ export function TenantManagement() {
   const [editingTenant, setEditingTenant] = useState<TenantDetail | null>(null)
   const [editForm, setEditForm] = useState({
     name: '',
+    businessType: '',
     plan: 'basico' as TenantPlan,
     maxUsers: 5,
     maxProducts: 500,
@@ -158,6 +159,7 @@ export function TenantManagement() {
     const result = await api.createTenant({
       name: createForm.name,
       slug: createForm.slug,
+      businessType: createForm.businessType || undefined,
       plan: createForm.plan,
       maxUsers: createForm.maxUsers,
       maxProducts: createForm.maxProducts,
@@ -186,6 +188,7 @@ export function TenantManagement() {
     setIsUpdating(true)
     const result = await api.updateTenant(editingTenant.id, {
       name: editForm.name,
+      businessType: editForm.businessType || undefined,
       plan: editForm.plan,
       maxUsers: editForm.maxUsers,
       maxProducts: editForm.maxProducts,
@@ -216,6 +219,7 @@ export function TenantManagement() {
     setEditingTenant(tenant)
     setEditForm({
       name: tenant.name,
+      businessType: tenant.businessType || '',
       plan: tenant.plan,
       maxUsers: tenant.maxUsers,
       maxProducts: tenant.maxProducts,
@@ -456,6 +460,28 @@ export function TenantManagement() {
                 </div>
                 <p className="text-xs text-muted-foreground">Identificador único, solo letras minúsculas, números y guiones</p>
               </div>
+              <div className="space-y-2">
+                <Label>Categoría del Negocio</Label>
+                <Select value={createForm.businessType || ''} onValueChange={(v) => setCreateForm(f => ({ ...f, businessType: v }))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar categoría..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="perfumería">Perfumería</SelectItem>
+                    <SelectItem value="ropa">Ropa</SelectItem>
+                    <SelectItem value="tienda">Tienda</SelectItem>
+                    <SelectItem value="farmacia">Farmacia</SelectItem>
+                    <SelectItem value="ferreteria">Ferretería</SelectItem>
+                    <SelectItem value="restaurante">Restaurante</SelectItem>
+                    <SelectItem value="tecnologia">Tecnología</SelectItem>
+                    <SelectItem value="cosmetica">Cosmética</SelectItem>
+                    <SelectItem value="deportes">Deportes</SelectItem>
+                    <SelectItem value="mascotas">Mascotas</SelectItem>
+                    <SelectItem value="libreria">Librería</SelectItem>
+                    <SelectItem value="otros">Otros</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-2">
                   <Label>Plan</Label>
@@ -564,6 +590,28 @@ export function TenantManagement() {
                 value={editForm.name}
                 onChange={(e) => setEditForm(f => ({ ...f, name: e.target.value }))}
               />
+            </div>
+            <div className="space-y-2">
+              <Label>Categoría del Negocio</Label>
+              <Select value={editForm.businessType || ''} onValueChange={(v) => setEditForm(f => ({ ...f, businessType: v }))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar categoría..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="perfumería">Perfumería</SelectItem>
+                  <SelectItem value="ropa">Ropa</SelectItem>
+                  <SelectItem value="tienda">Tienda</SelectItem>
+                  <SelectItem value="farmacia">Farmacia</SelectItem>
+                  <SelectItem value="ferreteria">Ferretería</SelectItem>
+                  <SelectItem value="restaurante">Restaurante</SelectItem>
+                  <SelectItem value="tecnologia">Tecnología</SelectItem>
+                  <SelectItem value="cosmetica">Cosmética</SelectItem>
+                  <SelectItem value="deportes">Deportes</SelectItem>
+                  <SelectItem value="mascotas">Mascotas</SelectItem>
+                  <SelectItem value="libreria">Librería</SelectItem>
+                  <SelectItem value="otros">Otros</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label>Plan</Label>

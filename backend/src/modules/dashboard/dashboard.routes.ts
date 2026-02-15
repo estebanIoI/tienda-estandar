@@ -25,6 +25,19 @@ router.get(
   dashboardController.getSalesTrend.bind(dashboardController)
 );
 
+// GET /api/dashboard/monthly-revenue-costs
+router.get(
+  '/monthly-revenue-costs',
+  [
+    query('months')
+      .optional()
+      .isInt({ min: 1, max: 12 })
+      .withMessage('El numero de meses debe estar entre 1 y 12'),
+    validateRequest,
+  ],
+  dashboardController.getMonthlyRevenueCosts.bind(dashboardController)
+);
+
 // GET /api/dashboard/store-info
 router.get('/store-info', dashboardController.getStoreInfo.bind(dashboardController));
 

@@ -201,6 +201,71 @@ export class DashboardService {
     }));
   }
 
+  async getMonthlyRevenueCosts(tenantId: string, months = 6): Promise<Array<{ month: string; revenue: number; costs: number }>> {
+    interface MonthlyRow extends RowDataPacket {
+      month_label: string;
+      revenue: number;
+      costs: number;
+    }
+
+    const [rows] = await db.execute<MonthlyRow[]>(`
+      SELECT
+        DATE_FORMAT(m.month_start, '%Y-%m') AS month_label,
+        COALESCE(rev.sale_revenue, 0) + COALESCE(cp_rev.credit_revenue, 0) AS revenue,
+        COALESCE(costs.total_cost, 0) AS costs
+      FROM (
+        SELECT DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL n MONTH), '%Y-%m-01') AS month_start
+        FROM (
+          SELECT 0 AS n UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION SELECT 5
+        ) nums
+        WHERE n < ?
+      ) m
+      LEFT JOIN (
+        SELECT
+          DATE_FORMAT(s.created_at, '%Y-%m') AS sale_month,
+          SUM(CASE WHEN s.payment_method != 'fiado' THEN s.total ELSE 0 END) AS sale_revenue
+        FROM sales s
+        WHERE s.tenant_id = ? AND s.status = 'completada'
+        GROUP BY sale_month
+      ) rev ON rev.sale_month = DATE_FORMAT(m.month_start, '%Y-%m')
+      LEFT JOIN (
+        SELECT
+          DATE_FORMAT(cp.created_at, '%Y-%m') AS payment_month,
+          SUM(cp.amount) AS credit_revenue
+        FROM credit_payments cp
+        INNER JOIN sales s2 ON cp.sale_id = s2.id
+        WHERE s2.tenant_id = ?
+        GROUP BY payment_month
+      ) cp_rev ON cp_rev.payment_month = DATE_FORMAT(m.month_start, '%Y-%m')
+      LEFT JOIN (
+        SELECT
+          DATE_FORMAT(s.created_at, '%Y-%m') AS sale_month,
+          SUM(si.quantity * p.purchase_price) AS total_cost
+        FROM sales s
+        INNER JOIN sale_items si ON s.id = si.sale_id
+        INNER JOIN products p ON si.product_id = p.id
+        WHERE s.tenant_id = ? AND s.status = 'completada'
+        GROUP BY sale_month
+      ) costs ON costs.sale_month = DATE_FORMAT(m.month_start, '%Y-%m')
+      ORDER BY m.month_start ASC
+    `, [months, tenantId, tenantId, tenantId]);
+
+    const monthNames: Record<string, string> = {
+      '01': 'Ene', '02': 'Feb', '03': 'Mar', '04': 'Abr',
+      '05': 'May', '06': 'Jun', '07': 'Jul', '08': 'Ago',
+      '09': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dic',
+    };
+
+    return rows.map(row => {
+      const mm = String(row.month_label).split('-')[1];
+      return {
+        month: monthNames[mm] || mm,
+        revenue: Number(row.revenue),
+        costs: Number(row.costs),
+      };
+    });
+  }
+
   async getStoreInfo(tenantId: string): Promise<{
     name: string;
     address: string;

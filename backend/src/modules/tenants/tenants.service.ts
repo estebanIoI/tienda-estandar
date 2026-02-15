@@ -22,6 +22,7 @@ interface TenantSummaryRow extends RowDataPacket {
   id: string;
   name: string;
   slug: string;
+  business_type: string | null;
   owner_id: string | null;
   owner_name: string | null;
   owner_email: string | null;
@@ -54,6 +55,7 @@ export interface Tenant {
 }
 
 export interface TenantWithSummary extends Tenant {
+  businessType?: string;
   ownerName?: string;
   ownerEmail?: string;
   totalUsers: number;
@@ -82,6 +84,7 @@ export class TenantsService {
       id: row.id,
       name: row.name,
       slug: row.slug,
+      businessType: row.business_type || undefined,
       ownerId: row.owner_id || undefined,
       ownerName: row.owner_name || undefined,
       ownerEmail: row.owner_email || undefined,
@@ -122,7 +125,7 @@ export class TenantsService {
 
     const [rows] = await db.execute<TenantSummaryRow[]>(
       `SELECT
-        t.id, t.name, t.slug, t.owner_id, t.plan, t.status,
+        t.id, t.name, t.slug, t.business_type, t.owner_id, t.plan, t.status,
         t.max_users, t.max_products, t.created_at, t.updated_at,
         u.name as owner_name, u.email as owner_email,
         (SELECT COUNT(*) FROM users WHERE tenant_id = t.id) as total_users,
@@ -150,7 +153,7 @@ export class TenantsService {
   async findById(id: string): Promise<TenantWithSummary> {
     const [rows] = await db.execute<TenantSummaryRow[]>(
       `SELECT
-        t.id, t.name, t.slug, t.owner_id, t.plan, t.status,
+        t.id, t.name, t.slug, t.business_type, t.owner_id, t.plan, t.status,
         t.max_users, t.max_products, t.created_at, t.updated_at,
         u.name as owner_name, u.email as owner_email,
         (SELECT COUNT(*) FROM users WHERE tenant_id = t.id) as total_users,
@@ -172,6 +175,7 @@ export class TenantsService {
   async create(data: {
     name: string;
     slug: string;
+    businessType?: string;
     plan?: string;
     maxUsers?: number;
     maxProducts?: number;
@@ -205,12 +209,13 @@ export class TenantsService {
       // Create tenant
       const tenantId = uuidv4();
       await connection.execute<ResultSetHeader>(
-        `INSERT INTO tenants (id, name, slug, plan, max_users, max_products, status)
-         VALUES (?, ?, ?, ?, ?, ?, 'activo')`,
+        `INSERT INTO tenants (id, name, slug, business_type, plan, max_users, max_products, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'activo')`,
         [
           tenantId,
           data.name,
           data.slug,
+          data.businessType || null,
           data.plan || 'basico',
           data.maxUsers || 5,
           data.maxProducts || 500,
@@ -287,6 +292,7 @@ export class TenantsService {
     id: string,
     data: {
       name?: string;
+      businessType?: string;
       plan?: string;
       status?: string;
       maxUsers?: number;
@@ -301,6 +307,10 @@ export class TenantsService {
     if (data.name !== undefined) {
       updates.push('name = ?');
       values.push(data.name);
+    }
+    if (data.businessType !== undefined) {
+      updates.push('business_type = ?');
+      values.push(data.businessType);
     }
     if (data.plan !== undefined) {
       updates.push('plan = ?');

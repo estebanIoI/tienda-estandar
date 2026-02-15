@@ -16,6 +16,7 @@ import { Mail, Lock, User, AlertCircle, Eye, EyeOff, BarChart3, Package, Shoppin
 import { AboutModal } from '@/components/about-modal'
 import { DataPolicyModal } from '@/components/data-policy-modal'
 import { ContactModal } from '@/components/contact-modal'
+import { RegisterModal } from '@/components/register-modal'
 
 interface AuthFormProps {
   onGoBack?: () => void
@@ -27,6 +28,8 @@ export function AuthForm({ onGoBack }: AuthFormProps) {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+
+  const [showRegisterModal, setShowRegisterModal] = useState(false)
 
   const [formData, setFormData] = useState({
     email: '',
@@ -272,17 +275,29 @@ export function AuthForm({ onGoBack }: AuthFormProps) {
           </form>
 
           <div className="text-center pt-2">
-            <button
-              type="button"
-              onClick={() => {
-                setIsLogin(!isLogin)
-                setError('')
-              }}
-              className="text-sm text-muted-foreground hover:text-primary transition-colors"
-            >
-              {isLogin ? '.' : '¿Ya tienes cuenta? Inicia sesión'}
-            </button>
+            {isLogin ? (
+              <button
+                type="button"
+                onClick={() => setShowRegisterModal(true)}
+                className="text-sm text-muted-foreground hover:text-primary transition-colors font-medium"
+              >
+                Regístrate
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsLogin(true)
+                  setError('')
+                }}
+                className="text-sm text-muted-foreground hover:text-primary transition-colors"
+              >
+                ¿Ya tienes cuenta? Inicia sesión
+              </button>
+            )}
           </div>
+
+          <RegisterModal open={showRegisterModal} onOpenChange={setShowRegisterModal} />
 
           {/* About, Data Policy & Contact buttons */}
           <div className="flex items-center justify-center gap-2 pt-4 border-t border-border">

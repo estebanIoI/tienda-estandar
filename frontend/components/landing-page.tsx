@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 const formatCOP = (value: number) =>
   new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value)
@@ -24,7 +24,10 @@ import {
   X,
   Search,
   MapPin,
-  Menu, // Add Menu icon
+  Menu,
+  Store,
+  ArrowLeft,
+  Package,
 } from 'lucide-react'
 import { CheckoutView } from '@/components/checkout/CheckoutView'
 import { ensureAbsoluteUrl } from '@/utils/url'
@@ -35,15 +38,6 @@ interface LandingPageProps {
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
-
-const TOTAL_FRAMES_1 = 142  // frames0 starts at frame_0003 (0,1,2 deleted)
-const TOTAL_FRAMES_2 = 145
-const frames0_OFFSET = 3    // first file is frame_0003.jpg
-const LERP_FACTOR = 0.92
-
-function easeOutCubic(t: number): number {
-  return 1 - Math.pow(1 - t, 3)
-}
 
 function clamp(v: number, min: number, max: number) {
   return Math.max(min, Math.min(max, v))
@@ -80,11 +74,6 @@ const values = [
   { icon: Star, label: 'Responsabilidad Social', desc: 'Comprometidos con nuestra comunidad' },
 ]
 
-function getFramePath(folder: string, index: number, offset = 0): string {
-  const padded = String(index + offset).padStart(4, '0')
-  return `/image/${folder}/frame_${padded}.jpg`
-}
-
 // ====== Storefront product type ======
 interface StorefrontProduct {
   id: number
@@ -101,31 +90,7 @@ interface StorefrontProduct {
 }
 
 export function LandingPage({ onGoToLogin }: LandingPageProps) {
-  // ---- Scroll-driven frame animation state ----
-  const [frame1Index, setFrame1Index] = useState(0)
-  const [frame2Index, setFrame2Index] = useState(0)
-  const [hero1Opacity, setHero1Opacity] = useState(1)
-  const [hero1Folder, setHero1Folder] = useState('frames0')
-  const [hero2ContentOpacity, setHero2ContentOpacity] = useState(0)
-  const [hero2ContentY, setHero2ContentY] = useState(40)
-  const hero1Ref = useRef<HTMLDivElement>(null)
-  const hero2Ref = useRef<HTMLDivElement>(null)
-  const canvas1Ref = useRef<HTMLCanvasElement>(null)
-  const canvas2Ref = useRef<HTMLCanvasElement>(null)
   const [showCatalog, setShowCatalog] = useState(false)
-
-  const frames0Ref = useRef<HTMLImageElement[]>([])
-  const frames2Ref = useRef<HTMLImageElement[]>([])
-  const animatedFrame1 = useRef(0)
-  const animatedFrame2 = useRef(0)
-  const targetFrame1 = useRef(0)
-  const targetFrame2 = useRef(0)
-  const rafId = useRef<number>(0)
-  const rafRunning = useRef(false)
-  const tickRef = useRef<(() => void) | null>(null)
-  // performance helpers — recuerdan el último frame dibujado para evitar redraws innecesarios
-  const lastDrawnFrame1 = useRef<number | null>(null)
-  const lastDrawnFrame2 = useRef<number | null>(null)
 
   // ====== STOREFRONT STATE ======
   const [products, setProducts] = useState<StorefrontProduct[]>([])
@@ -133,8 +98,9 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [loadingProducts, setLoadingProducts] = useState(false)
-  const [stores, setStores] = useState<{ id: string; name: string; slug: string; businessType: string | null }[]>([])
+  const [stores, setStores] = useState<{ id: string; name: string; slug: string; businessType: string | null; logoUrl: string | null; address: string | null; productCount: number }[]>([])
   const [selectedStore, setSelectedStore] = useState<string>('all')
+  const [showStoresView, setShowStoresView] = useState(true)
 
   // ====== DECANT STATE ======
   const [showDecantModal, setShowDecantModal] = useState(false)
@@ -215,10 +181,13 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
 
   // ====== FETCH PRODUCTS ======
   useEffect(() => {
+    // Don't fetch products when showing stores view
+    if (showStoresView && selectedStore === 'all') return
+
     const fetchProducts = async () => {
       setLoadingProducts(true)
       try {
-        const storeParam = selectedStore !== 'all' ? `&store=${selectedStore}` : ''
+        const storeParam = selectedStore !== 'all' ? `&store=${selectedStore}` : '&store=all'
         const res = await fetch(`${API_URL}/storefront/products?limit=50${storeParam}`)
         const json = await res.json()
         if (json.success && json.data?.products) {
@@ -232,7 +201,8 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
     }
     const fetchCategories = async () => {
       try {
-        const res = await fetch(`${API_URL}/storefront/categories`)
+        const storeParam = selectedStore !== 'all' ? `?store=${selectedStore}` : ''
+        const res = await fetch(`${API_URL}/storefront/categories${storeParam}`)
         const json = await res.json()
         if (json.success && json.data) {
           setCategories(json.data)
@@ -243,7 +213,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
     }
     fetchProducts()
     fetchCategories()
-  }, [selectedStore])
+  }, [selectedStore, showStoresView])
 
   // ====== FETCH STORES ======
   useEffect(() => {
@@ -253,6 +223,11 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
         const json = await res.json()
         if (json.success && json.data) {
           setStores(json.data)
+          // Si solo hay una tienda activa, mostrar sus productos directamente
+          if (json.data.length === 1) {
+            setSelectedStore(json.data[0].slug)
+            setShowStoresView(false)
+          }
         }
       } catch (e) {
         console.error('Error fetching stores:', e)
@@ -462,233 +437,8 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
     return matchCategory && matchSearch
   })
 
-  // ---- Frame preload (progressive, idle-friendly) ----
-  useEffect(() => {
-    // Precarga prioritaria: primero los primeros 8 frames, luego el resto en lotes pequeños
-    const loadFrames = (folder: string, store: React.MutableRefObject<HTMLImageElement[]>, count: number, offset = 0) => {
-      const imgs: HTMLImageElement[] = new Array(count);
-      const batchSize = 3; // aún más pequeño para evitar bloqueos
-      // Precarga prioritaria de los primeros 8 frames
-      for (let i = 0; i < Math.min(8, count); i++) {
-        const img = new Image();
-        try { img.decoding = 'async'; } catch (e) {}
-        img.src = getFramePath(folder, i, offset);
-        img.decode?.().catch(() => {});
-        imgs[i] = img;
-      }
-      store.current = imgs;
-      // El resto en lotes pequeños y en idle
-      const schedule = (cb: () => void) => {
-        if ((window as any).requestIdleCallback) {
-          (window as any).requestIdleCallback(cb, { timeout: 500 });
-        } else {
-          setTimeout(cb, 200);
-        }
-      };
-      const loadBatch = (start: number) => {
-        const end = Math.min(start + batchSize, count);
-        for (let i = start; i < end; i++) {
-          if (imgs[i]) continue; // ya precargado
-          const img = new Image();
-          try { img.decoding = 'async'; } catch (e) {}
-          img.src = getFramePath(folder, i, offset);
-          img.decode?.().catch(() => {});
-          imgs[i] = img;
-        }
-        store.current = imgs;
-        if (end < count) schedule(() => loadBatch(end));
-      };
-      if (count > 8) schedule(() => loadBatch(8));
-    };
-    // Detect mobile para frames0 vs frames0c
-    const isMobile = window.innerWidth < 768;
-    const frames0Folder = isMobile ? 'frames0c' : 'frames0';
-    setHero1Folder(frames0Folder);
-    loadFrames(frames0Folder, frames0Ref, TOTAL_FRAMES_1, frames0_OFFSET);
-    loadFrames('frames2', frames2Ref, TOTAL_FRAMES_2);
-  }, []);
-
-  const drawFrame = useCallback((canvas: HTMLCanvasElement | null, frames: HTMLImageElement[], index: number,
-    options: { fit: 'cover' | 'contain', alignY?: 'top' | 'center' | 'bottom' } | boolean = false) => {
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-    const img = frames[Math.round(index)]
-    if (!img || !img.complete) return
-
-    let fit = 'cover'
-    let alignY = 'center'
-    if (typeof options === 'boolean') {
-      fit = options ? 'contain' : 'cover'
-    } else {
-      fit = options.fit
-      alignY = options.alignY || 'center'
-    }
-
-    const dpr = Math.min(window.devicePixelRatio || 1, 2) // cap DPR to avoid excessively large canvas sizes on very high‑DPI screens
-    const w = canvas.clientWidth
-    const h = canvas.clientHeight
-    if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
-      canvas.width = w * dpr
-      canvas.height = h * dpr
-      ctx.scale(dpr, dpr)
-    }
-
-    ctx.fillStyle = '#000'
-    ctx.fillRect(0, 0, w, h)
-
-    const imgRatio = img.naturalWidth / img.naturalHeight
-    const canvasRatio = w / h
-
-    if (fit === 'contain') {
-      let dw: number, dh: number, dx: number, dy: number
-      if (imgRatio > canvasRatio) {
-        dw = w; dh = w / imgRatio; dx = 0
-      } else {
-        dh = h; dw = h * imgRatio; dx = (w - dw) / 2
-      }
-
-      if (alignY === 'top') dy = 0
-      else if (alignY === 'bottom') dy = h - dh
-      else dy = (h - dh) / 2
-
-      ctx.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight, dx, dy, dw, dh)
-    } else {
-      let sw = img.naturalWidth, sh = img.naturalHeight, sx = 0, sy = 0
-      if (imgRatio > canvasRatio) {
-        // crop horizontal
-        sw = img.naturalHeight * canvasRatio
-        sx = (img.naturalWidth - sw) / 2
-      } else {
-        // crop vertical
-        sh = img.naturalWidth / canvasRatio
-        sy = (img.naturalHeight - sh) / 2
-      }
-      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, w, h)
-    }
-  }, [])
-
-  useEffect(() => {
-    const tick = () => {
-      rafRunning.current = true
-      // LERP smoothing
-      animatedFrame1.current += (targetFrame1.current - animatedFrame1.current) * LERP_FACTOR
-      animatedFrame2.current += (targetFrame2.current - animatedFrame2.current) * LERP_FACTOR
-
-      const rounded1 = Math.round(animatedFrame1.current)
-      const rounded2 = Math.round(animatedFrame2.current)
-      const isMobile = window.innerWidth < 768
-
-      const opts1 = isMobile
-        ? { fit: 'contain' as const, alignY: 'bottom' as const }
-        : { fit: 'cover' as const }
-
-      const opts2 = isMobile
-        ? { fit: 'contain' as const, alignY: 'top' as const }
-        : { fit: 'cover' as const }
-
-      // LOG: Estado de animación y frames
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('[tick] frame1', { animated: animatedFrame1.current, target: targetFrame1.current, rounded1, framesLoaded: frames0Ref.current.length });
-        console.log('[tick] frame2', { animated: animatedFrame2.current, target: targetFrame2.current, rounded2, framesLoaded: frames2Ref.current.length });
-      }
-
-      // ONLY redraw / setState when the visible (rounded) frame actually changes.
-      if (rounded1 !== lastDrawnFrame1.current) {
-        lastDrawnFrame1.current = rounded1
-        setFrame1Index(rounded1)
-        drawFrame(canvas1Ref.current, frames0Ref.current, animatedFrame1.current, opts1)
-      }
-
-      if (rounded2 !== lastDrawnFrame2.current) {
-        lastDrawnFrame2.current = rounded2
-        setFrame2Index(rounded2)
-        drawFrame(canvas2Ref.current, frames2Ref.current, animatedFrame2.current, opts2)
-      }
-
-      // Decide si continuar el loop: si la diferencia es mínima, parar RAF para ahorrar CPU
-      const need1 = Math.abs(targetFrame1.current - animatedFrame1.current) > 0.003
-      const need2 = Math.abs(targetFrame2.current - animatedFrame2.current) > 0.003
-      if (need1 || need2) {
-        rafId.current = requestAnimationFrame(tick)
-      } else {
-        rafRunning.current = false
-        rafId.current = 0
-      }
-    }
-
-    // expose tick so other effects (scroll) puedan reiniciarlo
-    tickRef.current = tick
-    // start once (will stop when settled)
-    rafId.current = requestAnimationFrame(tick)
-    return () => { if (rafId.current) cancelAnimationFrame(rafId.current) }
-  }, [drawFrame])
-
-  useEffect(() => {
-    // Mejor throttle: solo 1 update cada 40ms (25fps máx)
-    let lastCall = 0;
-    let rafPending = false;
-    const handle = () => {
-      rafPending = false;
-      const now = performance.now();
-      if (now - lastCall < 40) return; // 25fps máx
-      lastCall = now;
-      if (hero1Ref.current) {
-        const rect = hero1Ref.current.getBoundingClientRect();
-        const sectionH = hero1Ref.current.offsetHeight;
-        const scrolled = Math.max(-rect.top - 64, 0);
-        const progress = clamp(scrolled / (sectionH - window.innerHeight - 64), 0, 1);
-        const newTarget = clamp(Math.floor(progress * (TOTAL_FRAMES_1 - 1)), 0, TOTAL_FRAMES_1 - 1);
-        const prevTarget1 = targetFrame1.current;
-        if (process.env.NODE_ENV !== 'production') {
-          console.log('[scroll] hero1', { scrolled, progress, newTarget, prevTarget1 });
-        }
-        if (prevTarget1 !== newTarget) targetFrame1.current = newTarget;
-        const fadeStart = 0.65;
-        const textOpacity = progress < fadeStart ? 1 : clamp(1 - easeOutCubic((progress - fadeStart) / (1 - fadeStart)), 0, 1);
-        setHero1Opacity(textOpacity);
-        // Si cambió el target y la animación no está corriendo, reiniciar RAF
-        if (prevTarget1 !== newTarget && !rafRunning.current && tickRef.current) {
-          rafId.current = requestAnimationFrame(tickRef.current);
-        }
-      }
-      if (hero2Ref.current) {
-        const rect = hero2Ref.current.getBoundingClientRect();
-        const sectionH = hero2Ref.current.offsetHeight;
-        const scrolled = -rect.top;
-        const progress = clamp(scrolled / ((sectionH - window.innerHeight) * 0.65), 0, 1);
-        const newTarget = clamp(Math.floor(progress * (TOTAL_FRAMES_2 - 1)), 0, TOTAL_FRAMES_2 - 1);
-        const prevTarget2 = targetFrame2.current;
-        if (process.env.NODE_ENV !== 'production') {
-          console.log('[scroll] hero2', { scrolled, progress, newTarget, prevTarget2 });
-        }
-        if (prevTarget2 !== newTarget) targetFrame2.current = newTarget;
-        const viewportEntry = clamp(1 - (rect.top / window.innerHeight), 0, 1);
-        const revealProgress = clamp(viewportEntry * 2, 0, 1);
-        const eased = easeOutCubic(revealProgress);
-        setHero2ContentOpacity(eased);
-        setHero2ContentY(40 * (1 - eased));
-        if (prevTarget2 !== newTarget && !rafRunning.current && tickRef.current) {
-          rafId.current = requestAnimationFrame(tickRef.current);
-        }
-      }
-    };
-    const onScroll = () => {
-      if (!rafPending) {
-        rafPending = true;
-        requestAnimationFrame(handle);
-      }
-    };
-    window.addEventListener('scroll', onScroll, { passive: true });
-    handle();
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
-
   const scrollToDiscover = () => {
-    if (hero2Ref.current) {
-      const top = hero2Ref.current.getBoundingClientRect().top + window.scrollY
-      window.scrollTo({ top, behavior: 'smooth' })
-    }
+    document.getElementById('presentacion')?.scrollIntoView({ behavior: 'smooth' })
   }
 
   const scrollToCatalog = () => {
@@ -752,6 +502,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
           </div>
           <div className="hidden md:flex items-center gap-8 text-sm tracking-wide">
             <button onClick={scrollToDiscover} className="text-white/60 hover:text-white transition-colors uppercase text-xs tracking-[0.2em]">Descubre</button>
+            <button onClick={() => { setShowStoresView(true); setTimeout(() => document.getElementById('perfumes')?.scrollIntoView({ behavior: 'smooth' }), 100) }} className="text-white/60 hover:text-white transition-colors uppercase text-xs tracking-[0.2em]">Tiendas</button>
             <button onClick={scrollToPerfumes} className="text-white/60 hover:text-white transition-colors uppercase text-xs tracking-[0.2em]">Perfumes</button>
             <button onClick={() => { setShowCatalog(true); setTimeout(() => document.getElementById('catalogo')?.scrollIntoView({ behavior: 'smooth' }), 100) }} className="text-white/60 hover:text-white transition-colors uppercase text-xs tracking-[0.2em]">Catálogo</button>
             <button onClick={scrollToAbout} className="text-white/60 hover:text-white transition-colors uppercase text-xs tracking-[0.2em]">Nosotros</button>
@@ -796,6 +547,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
             </div>
             <div className="flex flex-col gap-6 text-sm font-light tracking-widest text-white/70">
               <button onClick={() => { scrollToDiscover(); setMobileMenuOpen(false) }} className="text-left py-2 hover:text-amber-400 transition-colors uppercase border-b border-white/5">Descubre</button>
+              <button onClick={() => { setShowStoresView(true); setMobileMenuOpen(false); setTimeout(() => document.getElementById('perfumes')?.scrollIntoView({ behavior: 'smooth' }), 100) }} className="text-left py-2 hover:text-amber-400 transition-colors uppercase border-b border-white/5">Tiendas</button>
               <button onClick={() => { scrollToPerfumes(); setMobileMenuOpen(false) }} className="text-left py-2 hover:text-amber-400 transition-colors uppercase border-b border-white/5">Perfumes</button>
               <button onClick={() => { setShowCatalog(true); setMobileMenuOpen(false); setTimeout(() => document.getElementById('catalogo')?.scrollIntoView({ behavior: 'smooth' }), 100) }} className="text-left py-2 hover:text-amber-400 transition-colors uppercase border-b border-white/5">Catálogo</button>
               <button onClick={() => { scrollToAbout(); setMobileMenuOpen(false) }} className="text-left py-2 hover:text-amber-400 transition-colors uppercase border-b border-white/5">Nosotros</button>
@@ -805,151 +557,113 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
         </>
       )}
 
-      {/* ========== HERO - FRAME 1 ========== */}
-      <section ref={hero1Ref} className="relative" style={{ height: '140vh', marginBottom: 0 }}>
-        <div className="sticky top-0 h-screen w-full overflow-hidden">
-          <canvas ref={canvas1Ref} className="absolute inset-0 w-full h-full" />
-          {frame1Index === 0 && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img decoding="async" src={getFramePath(hero1Folder, 0, frames0_OFFSET)} alt="Perfum Mua — Presentación" className="absolute inset-0 w-full h-full object-cover bg-black" />
-          )}
-          <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-black/40 pointer-events-none" />
-
-          {/* Content overlay — DOS BOTONES PRINCIPALES */}
-          <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-4 pt-60">
-            <div
-              className="space-y-6 max-w-3xl bg-black/70 rounded-2xl shadow-2xl px-6 py-10 border border-white/10 backdrop-blur-md"
-              style={{
-                opacity: hero1Opacity,
-                transform: `translateY(${(1 - hero1Opacity) * -30}px) scale(${0.95 + hero1Opacity * 0.05})`,
-                transition: 'transform 0.1s cubic-bezier(0.16, 1, 0.3, 1)',
-                willChange: 'opacity, transform',
-                boxShadow: '0 8px 32px 0 rgba(0,0,0,0.45)',
-              }}
-            >
-              <p className="text-amber-400/90 uppercase tracking-[0.5em] text-xs sm:text-sm font-semibold drop-shadow-lg"></p>
-              <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extralight tracking-tight leading-tight drop-shadow-xl">
-                El Arte de<br />
-                <span className="bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-400 bg-clip-text text-transparent font-light drop-shadow-lg">
-                  Dejar Huella
-                </span>
-              </h1>
-              <p className="text-white/80 text-base sm:text-lg font-light max-w-xl mx-auto leading-relaxed drop-shadow-lg">
-                Descubre la esencia que define tu identidad. Perfumes exclusivos que dejan huella.
-              </p>
-
-              {/* ====== DOS BOTONES PRINCIPALES ====== */}
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
-                <a
-                  href="https://www.google.com/maps/place/Perfum+Mua+Perfumer%C3%ADa/@1.14572,-76.647563,16z/data=!4m14!1m7!3m6!1s0x8e28b3f8cce25647:0xa825c168e298a3e6!2sPerfum+Mua+Perfumer%C3%ADa!8m2!3d1.14572!4d-76.6475632!16s%2Fg%2F11tf33r38x!3m5!1s0x8e28b3f8cce25647:0xa825c168e298a3e6!8m2!3d1.14572!4d-76.6475632!16s%2Fg%2F11tf33r38x?hl=es&entry=ttu&g_ep=EgoyMDI2MDIxMS4wIKXMDSoASAFQAw%3D%3D"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="group inline-flex items-center gap-3 bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/20 hover:border-amber-400/50 text-white px-8 py-4 transition-all duration-500 uppercase text-xs tracking-[0.2em] font-light shadow-md"
-                  title="Perfum Mua Perfumería, Carrera 8 #8-32, Cl. 7 #5-59 Local 102, Mocoa, Putumayo"
-                >
-                  <MapPin className="w-5 h-5 text-amber-400 group-hover:scale-110 transition-transform" />
-                  <span>
-                    Visítanos<br />
-                    <span className="block text-[10px] text-white/80 font-normal normal-case mt-1">Carrera 8 #8-32, Cl. 7 #5-59 Local 102, Mocoa, Putumayo</span>
-                  </span>
-                  <ArrowRight className="w-4 h-4 opacity-0 -ml-2 group-hover:opacity-100 group-hover:ml-0 transition-all duration-300" />
-                </a>
-                <button
-                  onClick={scrollToPerfumes}
-                  className="group inline-flex items-center gap-3 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-black px-8 py-4 transition-all duration-500 uppercase text-xs tracking-[0.2em] font-medium hover:shadow-lg hover:shadow-amber-500/30 shadow-md"
-                >
-                  <Sparkles className="w-5 h-5 group-hover:scale-110 transition-transform" />
-                  <span>Ver Perfumes</span>
-                  <ChevronDown className="w-4 h-4 animate-bounce" />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3">
-            <div className="w-px h-16 bg-white/10 relative overflow-hidden">
-              <div className="absolute top-0 left-0 w-full bg-amber-400/60 transition-none" style={{ height: `${(frame1Index / (TOTAL_FRAMES_1 - 1)) * 100}%` }} />
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ========== HERO 2 - FRAME 2 ========== */}
-      <section ref={hero2Ref} className="relative bg-black" style={{ height: '150vh', marginTop: 0 }}>
-        <div className="sticky top-0 h-screen w-full overflow-hidden bg-black">
-          <canvas ref={canvas2Ref} className="absolute inset-0 w-full h-full" />
+      {/* ========== HERO ========== */}
+      <section className="relative h-screen">
+        <div className="absolute inset-0 w-full h-full overflow-hidden">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            decoding="async"
-            src={getFramePath('frames2', 0)}
-            alt="Perfum Mua — Lo mejor"
-            className="absolute inset-0 w-full h-full object-contain bg-black"
-            style={{ opacity: frame2Index <= 1 ? 1 : 0, transition: 'opacity 0.3s ease' }}
+            src="/image/presentacion de perfume.gif"
+            alt="Perfum Mua — Presentación"
+            className="absolute inset-0 w-full h-full object-cover bg-black"
           />
-          <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/40 to-transparent pointer-events-none" />
-          <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/40 pointer-events-none" />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/10 to-black/70 pointer-events-none" />
+        </div>
 
-          <div className="absolute inset-0 flex items-center">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
-              <div
-                className="max-w-lg space-y-8"
-                style={{ opacity: hero2ContentOpacity, transform: `translateY(${hero2ContentY}px)`, willChange: 'opacity, transform' }}
+        {/* Content overlay */}
+        <div className="relative h-full flex flex-col items-center justify-end text-center px-4 pb-28 sm:pb-32">
+          <div className="space-y-5 max-w-3xl">
+            <p className="text-amber-400/80 uppercase tracking-[0.5em] text-[10px] sm:text-xs font-medium">Perfumería exclusiva</p>
+            <h1 className="text-5xl sm:text-7xl lg:text-8xl font-extralight tracking-tight leading-[0.95]" style={{ textShadow: '0 2px 30px rgba(0,0,0,0.6)' }}>
+              El Arte de<br />
+              <span className="bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-400 bg-clip-text text-transparent font-light">
+                Dejar Huella
+              </span>
+            </h1>
+            <p className="text-white/70 text-sm sm:text-base font-light max-w-md mx-auto leading-relaxed" style={{ textShadow: '0 1px 12px rgba(0,0,0,0.5)' }}>
+              Descubre la esencia que define tu identidad. Perfumes exclusivos que dejan huella.
+            </p>
+
+            {/* ====== DOS BOTONES PRINCIPALES ====== */}
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+              <a
+                href="https://www.google.com/maps/place/Perfum+Mua+Perfumer%C3%ADa/@1.14572,-76.647563,16z/data=!4m14!1m7!3m6!1s0x8e28b3f8cce25647:0xa825c168e298a3e6!2sPerfum+Mua+Perfumer%C3%ADa!8m2!3d1.14572!4d-76.6475632!16s%2Fg%2F11tf33r38x!3m5!1s0x8e28b3f8cce25647:0xa825c168e298a3e6!8m2!3d1.14572!4d-76.6475632!16s%2Fg%2F11tf33r38x?hl=es&entry=ttu&g_ep=EgoyMDI2MDIxMS4wIKXMDSoASAFQAw%3D%3D"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group inline-flex items-center gap-3 bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/20 hover:border-amber-400/50 text-white px-8 py-4 transition-all duration-500 uppercase text-xs tracking-[0.2em] font-light shadow-md"
+                title="Perfum Mua Perfumería, Carrera 8 #8-32, Cl. 7 #5-59 Local 102, Mocoa, Putumayo"
               >
-                <div className="space-y-2">
-                  <p className="text-amber-400/80 uppercase tracking-[0.5em] text-xs font-light">Lo Mejor de</p>
-                  <h2 className="text-3xl sm:text-5xl font-extralight tracking-tight">Perfum Mua</h2>
-                </div>
-
-                <div className="space-y-5 text-white/70 text-sm sm:text-base font-light leading-relaxed">
-                  {[
-                    { icon: Sparkles, text: 'Fragancias únicas para una experiencia inolvidable', delay: 0 },
-                    { icon: Star, text: '10 años de experiencia en el mercado perfumero', delay: 0.05 },
-                    { icon: Heart, text: 'Asesoría personalizada para encontrar tu aroma ideal', delay: 0.1 },
-                    { icon: Award, text: 'La más alta calidad en cada producto', delay: 0.15 },
-                  ].map((item, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-start gap-3"
-                      style={{
-                        opacity: clamp((hero2ContentOpacity - item.delay) / (1 - item.delay), 0, 1),
-                        transform: `translateX(${20 * (1 - clamp((hero2ContentOpacity - item.delay) / (1 - item.delay), 0, 1))}px)`,
-                        willChange: 'opacity, transform',
-                      }}
-                    >
-                      <item.icon className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-                      <p>{item.text}</p>
-                    </div>
-                  ))}
-                </div>
-
-                <p
-                  className="text-white/50 text-sm font-light italic border-l-2 border-amber-500/30 pl-4"
-                  style={{ opacity: clamp((hero2ContentOpacity - 0.2) / 0.8, 0, 1) }}
-                >
-                  &ldquo;Nuestro compromiso va más allá del perfume: te guiamos para encontrar ese aroma que hable por ti, que refleje tu personalidad y deje una huella inolvidable.&rdquo;
-                </p>
-
-                <div style={{ opacity: clamp((hero2ContentOpacity - 0.3) / 0.7, 0, 1), transform: `translateY(${10 * (1 - clamp((hero2ContentOpacity - 0.3) / 0.7, 0, 1))}px)` }}>
-                  <Button
-                    onClick={scrollToPerfumes}
-                    size="lg"
-                    className="bg-amber-500 hover:bg-amber-400 text-black rounded-none uppercase tracking-[0.2em] text-xs px-10 h-12 mt-4 hover:shadow-lg hover:shadow-amber-500/20 transition-all duration-500"
-                  >
-                    <ShoppingCart className="w-4 h-4 mr-2" />
-                    Ver Perfumes
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3">
-            <div className="w-px h-16 bg-white/10 relative overflow-hidden">
-              <div className="absolute top-0 left-0 w-full bg-amber-400/60 transition-none" style={{ height: `${(frame2Index / (TOTAL_FRAMES_2 - 1)) * 100}%` }} />
+                <MapPin className="w-5 h-5 text-amber-400 group-hover:scale-110 transition-transform" />
+                <span>
+                  Visítanos<br />
+                  <span className="block text-[10px] text-white/80 font-normal normal-case mt-1">Carrera 8 #8-32, Cl. 7 #5-59 Local 102, Mocoa, Putumayo</span>
+                </span>
+                <ArrowRight className="w-4 h-4 opacity-0 -ml-2 group-hover:opacity-100 group-hover:ml-0 transition-all duration-300" />
+              </a>
+              <button
+                onClick={scrollToPerfumes}
+                className="group inline-flex items-center gap-3 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-black px-8 py-4 transition-all duration-500 uppercase text-xs tracking-[0.2em] font-medium hover:shadow-lg hover:shadow-amber-500/30 shadow-md"
+              >
+                <Sparkles className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                <span>Ver Perfumes</span>
+                <ChevronDown className="w-4 h-4 animate-bounce" />
+              </button>
             </div>
           </div>
         </div>
       </section>
+
+      {/* ========== PRESENTACIÓN DE PERFUMES ========== */}
+      <RevealSection id="presentacion" className="relative bg-black py-20 sm:py-28">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+            {/* Imagen */}
+            <div className="relative group">
+              <div className="absolute -inset-4 bg-gradient-to-br from-amber-500/20 via-transparent to-rose-500/10 rounded-2xl blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/presentaciondeperfumes.png"
+                alt="Presentación de perfumes Perfum Mua"
+                className="relative w-full h-auto rounded-lg shadow-2xl shadow-black/50"
+              />
+            </div>
+
+            {/* Contenido */}
+            <div className="space-y-8">
+              <div className="space-y-3">
+                <p className="text-amber-400/80 uppercase tracking-[0.5em] text-xs font-light">Lo Mejor de</p>
+                <h2 className="text-3xl sm:text-5xl font-extralight tracking-tight">Perfum Mua</h2>
+              </div>
+
+              <div className="space-y-5 text-white/70 text-sm sm:text-base font-light leading-relaxed">
+                {[
+                  { icon: Sparkles, text: 'Fragancias únicas para una experiencia inolvidable' },
+                  { icon: Star, text: '10 años de experiencia en el mercado perfumero' },
+                  { icon: Heart, text: 'Asesoría personalizada para encontrar tu aroma ideal' },
+                  { icon: Award, text: 'La más alta calidad en cada producto' },
+                ].map((item, idx) => (
+                  <div key={idx} className="flex items-start gap-3">
+                    <item.icon className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                    <p>{item.text}</p>
+                  </div>
+                ))}
+              </div>
+
+              <p className="text-white/50 text-sm font-light italic border-l-2 border-amber-500/30 pl-4">
+                &ldquo;Nuestro compromiso va más allá del perfume: te guiamos para encontrar ese aroma que hable por ti, que refleje tu personalidad y deje una huella inolvidable.&rdquo;
+              </p>
+
+              <Button
+                onClick={scrollToPerfumes}
+                size="lg"
+                className="bg-amber-500 hover:bg-amber-400 text-black rounded-none uppercase tracking-[0.2em] text-xs px-10 h-12 hover:shadow-lg hover:shadow-amber-500/20 transition-all duration-500"
+              >
+                <ShoppingCart className="w-4 h-4 mr-2" />
+                Ver Perfumes
+              </Button>
+            </div>
+          </div>
+        </div>
+      </RevealSection>
 
       {/* ========== TAGLINE SECTION ========== */}
       <RevealSection className="py-24 sm:py-32 bg-gradient-to-b from-black via-zinc-950 to-black relative">
@@ -981,64 +695,126 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
         <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-amber-500/30 to-transparent" />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16 space-y-4">
-            <p className="text-amber-400/60 uppercase tracking-[0.5em] text-xs">Tienda Online</p>
-            <h2 className="text-3xl sm:text-4xl font-extralight tracking-tight">Nuestros Perfumes</h2>
+            <p className="text-amber-400/60 uppercase tracking-[0.5em] text-xs">
+              {showStoresView && selectedStore === 'all' ? 'Marketplace' : 'Tienda Online'}
+            </p>
+            <h2 className="text-3xl sm:text-4xl font-extralight tracking-tight">
+              {showStoresView && selectedStore === 'all'
+                ? 'Todas las Tiendas'
+                : selectedStore !== 'all'
+                  ? stores.find(s => s.slug === selectedStore)?.name || 'Productos'
+                  : 'Nuestros Perfumes'}
+            </h2>
             <p className="text-white/40 text-sm font-light max-w-md mx-auto">
-              Explora nuestra colección y añade tus favoritos al carrito. Envío a todo Colombia.
+              {showStoresView && selectedStore === 'all'
+                ? 'Explora las tiendas disponibles y descubre sus productos.'
+                : 'Explora nuestra colección y añade tus favoritos al carrito. Envío a todo Colombia.'}
             </p>
           </div>
 
-          {/* Search & Filter Bar */}
-          <div className="flex flex-col sm:flex-row gap-4 mb-10 max-w-3xl mx-auto">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-              <input
-                type="text"
-                placeholder="Buscar perfume..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 text-white placeholder-white/30 font-light text-sm focus:border-amber-500/50 focus:outline-none transition-colors rounded-none"
-              />
-            </div>
-            {stores.length > 1 && (
-              <select
-                value={selectedStore}
-                onChange={e => setSelectedStore(e.target.value)}
-                className="px-4 py-3 bg-white/5 border border-white/10 text-white text-sm font-light focus:border-amber-500/50 focus:outline-none transition-colors rounded-none appearance-none cursor-pointer"
-              >
-                <option value="all" className="bg-zinc-900">Todas las tiendas</option>
+          {/* Store Cards or Search & Filter Bar */}
+          {showStoresView && selectedStore === 'all' && stores.length > 0 ? (
+            <div className="mb-12">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
                 {stores.map(store => (
-                  <option key={store.id} value={store.slug} className="bg-zinc-900">{store.name}</option>
+                  <button
+                    key={store.id}
+                    onClick={() => {
+                      setSelectedStore(store.slug)
+                      setShowStoresView(false)
+                    }}
+                    className="group relative bg-white/5 border border-white/10 hover:border-amber-500/40 transition-all duration-500 overflow-hidden text-left"
+                  >
+                    {/* Store Image/Logo */}
+                    <div className="relative h-40 bg-gradient-to-br from-amber-500/10 via-black to-white/5 overflow-hidden flex items-center justify-center">
+                      {store.logoUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={ensureAbsoluteUrl(store.logoUrl)} alt={store.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+                      ) : (
+                        <Store className="w-16 h-16 text-amber-500/20 group-hover:text-amber-500/40 transition-colors duration-500" />
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                      {/* Product count badge */}
+                      <div className="absolute top-3 right-3 bg-amber-500/90 text-black text-[10px] font-bold px-2 py-1 flex items-center gap-1">
+                        <Package className="w-3 h-3" />
+                        {store.productCount}
+                      </div>
+                    </div>
+                    {/* Store Info */}
+                    <div className="p-5 space-y-2">
+                      <h3 className="text-base font-light text-white group-hover:text-amber-400 transition-colors truncate">{store.name}</h3>
+                      {store.businessType && (
+                        <p className="text-[11px] text-amber-400/60 uppercase tracking-widest">{store.businessType}</p>
+                      )}
+                      {store.address && (
+                        <p className="text-xs text-white/30 font-light flex items-center gap-1.5 truncate">
+                          <MapPin className="w-3 h-3 shrink-0" />
+                          {store.address}
+                        </p>
+                      )}
+                      <div className="flex items-center gap-2 text-amber-400/70 text-xs uppercase tracking-[0.15em] font-light pt-2 group-hover:gap-3 transition-all">
+                        <span>Ver productos</span>
+                        <ArrowRight className="w-3 h-3" />
+                      </div>
+                    </div>
+                  </button>
                 ))}
-              </select>
-            )}
-          </div>
-          <div className="flex gap-2 flex-wrap justify-center mb-10">
-            <button
-              onClick={() => setSelectedCategory('all')}
-              className={`px-4 py-2 text-xs uppercase tracking-wider border transition-all duration-300 ${selectedCategory === 'all'
-                ? 'bg-amber-500 text-black border-amber-500'
-                : 'bg-transparent text-white/50 border-white/10 hover:border-white/30'
-                }`}
-            >
-              Todos
-            </button>
-            {categories.map(cat => (
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col sm:flex-row gap-4 mb-10 max-w-3xl mx-auto">
+              {selectedStore !== 'all' && stores.length > 1 && (
+                <button
+                  onClick={() => {
+                    setSelectedStore('all')
+                    setShowStoresView(true)
+                  }}
+                  className="flex items-center gap-2 px-4 py-3 bg-amber-500/10 border border-amber-500/30 text-amber-400 text-sm font-light hover:bg-amber-500/20 transition-colors whitespace-nowrap"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  Todas las tiendas
+                </button>
+              )}
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+                <input
+                  type="text"
+                  placeholder="Buscar perfume..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 text-white placeholder-white/30 font-light text-sm focus:border-amber-500/50 focus:outline-none transition-colors rounded-none"
+                />
+              </div>
+            </div>
+          )}
+          {!(showStoresView && selectedStore === 'all') && (
+            <div className="flex gap-2 flex-wrap justify-center mb-10">
               <button
-                key={cat}
-                onClick={() => setSelectedCategory(cat)}
-                className={`px-4 py-2 text-xs uppercase tracking-wider border transition-all duration-300 ${selectedCategory === cat
+                onClick={() => setSelectedCategory('all')}
+                className={`px-4 py-2 text-xs uppercase tracking-wider border transition-all duration-300 ${selectedCategory === 'all'
                   ? 'bg-amber-500 text-black border-amber-500'
                   : 'bg-transparent text-white/50 border-white/10 hover:border-white/30'
                   }`}
               >
-                {cat}
+                Todos
               </button>
-            ))}
-          </div>
+              {categories.map(cat => (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`px-4 py-2 text-xs uppercase tracking-wider border transition-all duration-300 ${selectedCategory === cat
+                    ? 'bg-amber-500 text-black border-amber-500'
+                    : 'bg-transparent text-white/50 border-white/10 hover:border-white/30'
+                    }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Products Grid */}
-          {loadingProducts ? (
+          {showStoresView && selectedStore === 'all' ? null : loadingProducts ? (
             <div className="text-center py-20">
               <div className="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
               <p className="text-white/40 text-sm font-light">Cargando perfumes...</p>

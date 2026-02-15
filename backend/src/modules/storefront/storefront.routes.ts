@@ -28,7 +28,9 @@ router.get(
 
       // Get tenants — optionally filter by store slug
       let tenantId: string | null = null;
-      if (store) {
+      const showAll = !store || store === 'all';
+
+      if (!showAll) {
         const [tenants] = await pool.query(
           'SELECT id FROM tenants WHERE status = ? AND slug = ? LIMIT 1',
           ['activo', store]
@@ -36,21 +38,16 @@ router.get(
         if (tenants && tenants.length > 0) tenantId = tenants[0].id;
       }
 
-      // If no store filter or not found, get first active tenant
-      if (!tenantId) {
-        const [tenants] = await pool.query(
-          'SELECT id FROM tenants WHERE status = ? ORDER BY id ASC LIMIT 1',
-          ['activo']
-        ) as any;
-        if (!tenants || tenants.length === 0) {
-          res.json({ success: true, data: { products: [], pagination: { total: 0, page, limit, pages: 0 } } });
-          return;
-        }
-        tenantId = tenants[0].id;
-      }
+      let whereClause: string;
+      const params: any[] = [];
 
-      let whereClause = 'WHERE p.tenant_id = ? AND p.stock > 0 AND p.published_in_store = 1';
-      const params: any[] = [tenantId];
+      if (showAll || !tenantId) {
+        // Show products from all active tenants
+        whereClause = `WHERE p.stock > 0 AND p.published_in_store = 1 AND p.tenant_id IN (SELECT id FROM tenants WHERE status = 'activo')`;
+      } else {
+        whereClause = 'WHERE p.tenant_id = ? AND p.stock > 0 AND p.published_in_store = 1';
+        params.push(tenantId);
+      }
 
       if (category) {
         whereClause += ' AND p.category = ?';
@@ -103,19 +100,31 @@ router.get(
 );
 
 // GET /api/storefront/categories — Public endpoint
-router.get('/categories', async (_req: Request, res: Response) => {
+router.get('/categories', async (req: Request, res: Response) => {
   try {
-    const [tenants] = await pool.query(
-      'SELECT id FROM tenants WHERE status = ? ORDER BY id ASC LIMIT 1',
-      ['activo']
-    ) as any;
+    const store = req.query.store as string | undefined;
+    let tenantId: string | null = null;
 
-    if (!tenants || tenants.length === 0) {
-      res.json({ success: true, data: [] });
-      return;
+    if (store) {
+      const [tenants] = await pool.query(
+        'SELECT id FROM tenants WHERE status = ? AND slug = ? LIMIT 1',
+        ['activo', store]
+      ) as any;
+      if (tenants && tenants.length > 0) tenantId = tenants[0].id;
     }
 
-    const tenantId = tenants[0].id;
+    if (!tenantId) {
+      // No store filter: get categories across all active tenants
+      const [rows] = await pool.query(
+        `SELECT DISTINCT p.category FROM products p
+         INNER JOIN tenants t ON p.tenant_id = t.id
+         WHERE t.status = 'activo' AND p.stock > 0 AND p.published_in_store = 1
+         ORDER BY p.category`
+      ) as any;
+
+      res.json({ success: true, data: rows.map((r: any) => r.category) });
+      return;
+    }
 
     const [rows] = await pool.query(
       'SELECT DISTINCT category FROM products WHERE tenant_id = ? AND stock > 0 AND published_in_store = 1 ORDER BY category',
@@ -136,8 +145,11 @@ router.get('/categories', async (_req: Request, res: Response) => {
 router.get('/stores', async (_req: Request, res: Response) => {
   try {
     const [stores] = await pool.query(
-      `SELECT t.id, t.name, t.slug, t.business_type as businessType
+      `SELECT t.id, t.name, t.slug, t.business_type as businessType,
+              si.logo_url as logoUrl, si.address,
+              (SELECT COUNT(*) FROM products p WHERE p.tenant_id = t.id AND p.stock > 0 AND p.published_in_store = 1) as productCount
        FROM tenants t
+       LEFT JOIN store_info si ON si.tenant_id = t.id
        WHERE t.status = 'activo'
        ORDER BY t.name ASC`
     ) as any;

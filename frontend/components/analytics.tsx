@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react"
 import { useStore, getStockStatus } from '@/lib/store'
 import { type Product } from '@/lib/types'
 import { formatCOP } from '@/lib/utils'
+import { api } from '@/lib/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AccountingReport } from '@/components/accounting-report'
@@ -36,11 +37,22 @@ import {
 
 export function Analytics() {
   const { products, sales, fetchProducts, fetchSales, categories, fetchCategories } = useStore()
+  const [monthlySalesData, setMonthlySalesData] = useState<Array<{ mes: string; ventas: number; gastos: number }>>([])
 
   useEffect(() => {
     fetchProducts()
     fetchSales()
     fetchCategories()
+    // Fetch real monthly revenue vs costs data
+    api.getMonthlyRevenueCosts(6).then(res => {
+      if (res.success && res.data) {
+        setMonthlySalesData(res.data.map(d => ({
+          mes: d.month,
+          ventas: d.revenue,
+          gastos: d.costs,
+        })))
+      }
+    }).catch(() => {})
   }, [fetchProducts, fetchSales, fetchCategories])
 
   const getCategoryName = (categoryId: string) => {
@@ -100,15 +112,7 @@ export function Analytics() {
     }))
     .sort((a, b) => b.margen - a.margen)
 
-  // Ventas mensuales (simuladas basadas en ventas existentes)
-  const monthlySalesData = [
-    { mes: 'Ago', ventas: 4500000, gastos: 2800000 },
-    { mes: 'Sep', ventas: 5200000, gastos: 3100000 },
-    { mes: 'Oct', ventas: 4800000, gastos: 2900000 },
-    { mes: 'Nov', ventas: 6100000, gastos: 3500000 },
-    { mes: 'Dic', ventas: 8500000, gastos: 4200000 },
-    { mes: 'Ene', ventas: totalRevenue || 1391467, gastos: totalCost || 750000 },
-  ]
+  // monthlySalesData se obtiene del backend (ver useEffect)
 
   // Productos sin movimiento (stock > 0 pero sin ventas)
   const productSalesCount = completedSales.flatMap(s => s.items).reduce((acc, item) => {
