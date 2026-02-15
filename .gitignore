@@ -1,0 +1,25 @@
+node_modules/
+.env
+*.log
+dist/
+.DS_Store
+Thumbs.db
+
+
+
+# temp artifacts
+**/tmpclaude-*
+**/tmpclaude-*/
+/nul
+
+# Large files
+*.pdf
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+*.cache
+desktop.ini
