@@ -93,6 +93,11 @@ export interface Product {
   packageDimensions?: string
   packageContents?: string
   safetyWarnings?: string
+  // Ofertas
+  isOnOffer?: boolean
+  offerPrice?: number | null
+  offerLabel?: string | null
+  offerEnd?: string | null
   // Timestamps
   createdAt: string
   updatedAt: string

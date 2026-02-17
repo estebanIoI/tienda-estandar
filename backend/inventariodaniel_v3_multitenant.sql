@@ -223,6 +223,13 @@ CREATE TABLE IF NOT EXISTS products (
     -- Storefront / Tienda Online
     published_in_store BOOLEAN NOT NULL DEFAULT FALSE,
 
+    -- Ofertas
+    is_on_offer BOOLEAN NOT NULL DEFAULT FALSE,
+    offer_price DECIMAL(12, 2) NULL,
+    offer_label VARCHAR(100) NULL COMMENT 'Etiqueta personalizada de oferta',
+    offer_start DATETIME NULL,
+    offer_end DATETIME NULL,
+
     -- Auditoria
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -244,7 +251,8 @@ CREATE TABLE IF NOT EXISTS products (
     INDEX idx_expiry_date (expiry_date),
     INDEX idx_serial_number (serial_number),
     INDEX idx_isbn (isbn),
-    INDEX idx_published_store (published_in_store)
+    INDEX idx_published_store (published_in_store),
+    INDEX idx_on_offer (is_on_offer)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================

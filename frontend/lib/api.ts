@@ -512,6 +512,18 @@ class ApiService {
     })
   }
 
+  async toggleProductOffer(productId: string, data: {
+    isOnOffer: boolean
+    offerPrice?: number
+    offerLabel?: string
+    offerEnd?: string
+  }) {
+    return this.request<any>(`/storefront/offer/${productId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
   // =============================================
   // Orders endpoints
   // =============================================

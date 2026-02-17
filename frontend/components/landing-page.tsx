@@ -28,6 +28,10 @@ import {
   Store,
   ArrowLeft,
   Package,
+  Flame,
+  Zap,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react'
 import { CheckoutView } from '@/components/checkout/CheckoutView'
 import { ensureAbsoluteUrl } from '@/utils/url'
@@ -87,6 +91,15 @@ interface StorefrontProduct {
   color?: string
   size?: string
   gender?: string
+  isOnOffer?: boolean | number
+  offerPrice?: number | null
+  offerLabel?: string | null
+  productType?: string
+  material?: string
+  netWeight?: number
+  weightUnit?: string
+  warrantyMonths?: number
+  dimensions?: string
 }
 
 export function LandingPage({ onGoToLogin }: LandingPageProps) {
@@ -101,6 +114,15 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
   const [stores, setStores] = useState<{ id: string; name: string; slug: string; businessType: string | null; logoUrl: string | null; address: string | null; productCount: number }[]>([])
   const [selectedStore, setSelectedStore] = useState<string>('all')
   const [showStoresView, setShowStoresView] = useState(true)
+
+  // ====== OFFERS STATE ======
+  const [offerProducts, setOfferProducts] = useState<StorefrontProduct[]>([])
+  const [loadingOffers, setLoadingOffers] = useState(false)
+
+  // ====== PRODUCT DETAIL MODAL STATE ======
+  const [selectedProduct, setSelectedProduct] = useState<StorefrontProduct | null>(null)
+  const [showProductModal, setShowProductModal] = useState(false)
+  const [productQuantity, setProductQuantity] = useState(1)
 
   // ====== DECANT STATE ======
   const [showDecantModal, setShowDecantModal] = useState(false)
@@ -223,7 +245,6 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
         const json = await res.json()
         if (json.success && json.data) {
           setStores(json.data)
-          // Si solo hay una tienda activa, mostrar sus productos directamente
           if (json.data.length === 1) {
             setSelectedStore(json.data[0].slug)
             setShowStoresView(false)
@@ -235,6 +256,66 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
     }
     fetchStores()
   }, [])
+
+  // ====== FETCH OFFERS ======
+  useEffect(() => {
+    const fetchOffers = async () => {
+      setLoadingOffers(true)
+      try {
+        const storeParam = selectedStore !== 'all' ? `?store=${selectedStore}` : ''
+        const res = await fetch(`${API_URL}/storefront/offers${storeParam}`)
+        const json = await res.json()
+        if (json.success && json.data) {
+          setOfferProducts(json.data)
+        }
+      } catch (e) {
+        console.error('Error fetching offers:', e)
+      } finally {
+        setLoadingOffers(false)
+      }
+    }
+    fetchOffers()
+  }, [selectedStore])
+
+  // ====== PRODUCT MODAL FUNCTIONS ======
+  const openProductModal = (product: StorefrontProduct) => {
+    setSelectedProduct(product)
+    setProductQuantity(1)
+    setShowProductModal(true)
+  }
+
+  const closeProductModal = () => {
+    setShowProductModal(false)
+    setSelectedProduct(null)
+    setProductQuantity(1)
+  }
+
+  const addFromModal = () => {
+    if (!selectedProduct) return
+    const finalPrice = (selectedProduct.isOnOffer && selectedProduct.offerPrice) ? selectedProduct.offerPrice : selectedProduct.salePrice
+    setCarrito(prev => {
+      const tempId = String(selectedProduct.id)
+      const existingIndex = prev.findIndex(p => (p.tempId || String(p.id)) === tempId)
+      if (existingIndex >= 0) {
+        const newCart = [...prev]
+        newCart[existingIndex] = {
+          ...newCart[existingIndex],
+          cantidad: newCart[existingIndex].cantidad + productQuantity
+        }
+        return newCart
+      }
+      return [...prev, {
+        id: selectedProduct.id,
+        tempId,
+        nombre: selectedProduct.name,
+        precio: finalPrice,
+        cantidad: productQuantity,
+        imagen: selectedProduct.imageUrl || '',
+      }]
+    })
+    setShowCart(true)
+    closeProductModal()
+  }
 
 
 
@@ -282,11 +363,14 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
         return newCart
       }
 
+      // Use offer price if product is on offer
+      const finalPrice = (product.isOnOffer && product.offerPrice) ? product.offerPrice : product.salePrice
+
       return [...prev, {
         id: product.id,
         tempId: newItemTempId,
         nombre: options?.isDecant ? `${product.name} (${options.size})` : product.name,
-        precio: product.salePrice,
+        precio: finalPrice,
         cantidad: 1,
         imagen: product.imageUrl || '',
         tallaSeleccionada: options?.size,
@@ -456,6 +540,10 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
     document.getElementById('contacto')?.scrollIntoView({ behavior: 'smooth' })
   }
 
+  const scrollToOffers = () => {
+    document.getElementById('ofertas')?.scrollIntoView({ behavior: 'smooth' })
+  }
+
   const scrollToPerfumes = () => {
     document.getElementById('perfumes')?.scrollIntoView({ behavior: 'smooth' })
   }
@@ -502,6 +590,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
           </div>
           <div className="hidden md:flex items-center gap-8 text-sm tracking-wide">
             <button onClick={scrollToDiscover} className="text-white/60 hover:text-white transition-colors uppercase text-xs tracking-[0.2em]">Descubre</button>
+            {offerProducts.length > 0 && <button onClick={scrollToOffers} className="text-orange-400 hover:text-orange-300 transition-colors uppercase text-xs tracking-[0.2em] flex items-center gap-1"><Flame className="w-3 h-3" />Ofertas</button>}
             <button onClick={() => { setShowStoresView(true); setTimeout(() => document.getElementById('perfumes')?.scrollIntoView({ behavior: 'smooth' }), 100) }} className="text-white/60 hover:text-white transition-colors uppercase text-xs tracking-[0.2em]">Tiendas</button>
             <button onClick={scrollToPerfumes} className="text-white/60 hover:text-white transition-colors uppercase text-xs tracking-[0.2em]">Perfumes</button>
             <button onClick={() => { setShowCatalog(true); setTimeout(() => document.getElementById('catalogo')?.scrollIntoView({ behavior: 'smooth' }), 100) }} className="text-white/60 hover:text-white transition-colors uppercase text-xs tracking-[0.2em]">Catálogo</button>
@@ -547,6 +636,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
             </div>
             <div className="flex flex-col gap-6 text-sm font-light tracking-widest text-white/70">
               <button onClick={() => { scrollToDiscover(); setMobileMenuOpen(false) }} className="text-left py-2 hover:text-amber-400 transition-colors uppercase border-b border-white/5">Descubre</button>
+              {offerProducts.length > 0 && <button onClick={() => { scrollToOffers(); setMobileMenuOpen(false) }} className="text-left py-2 text-orange-400 hover:text-orange-300 transition-colors uppercase border-b border-white/5 flex items-center gap-2"><Flame className="w-4 h-4" />Ofertas</button>}
               <button onClick={() => { setShowStoresView(true); setMobileMenuOpen(false); setTimeout(() => document.getElementById('perfumes')?.scrollIntoView({ behavior: 'smooth' }), 100) }} className="text-left py-2 hover:text-amber-400 transition-colors uppercase border-b border-white/5">Tiendas</button>
               <button onClick={() => { scrollToPerfumes(); setMobileMenuOpen(false) }} className="text-left py-2 hover:text-amber-400 transition-colors uppercase border-b border-white/5">Perfumes</button>
               <button onClick={() => { setShowCatalog(true); setMobileMenuOpen(false); setTimeout(() => document.getElementById('catalogo')?.scrollIntoView({ behavior: 'smooth' }), 100) }} className="text-left py-2 hover:text-amber-400 transition-colors uppercase border-b border-white/5">Catálogo</button>
@@ -689,6 +779,105 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
           </div>
         </div>
       </RevealSection>
+
+      {/* ========== OFERTAS CALIENTES ========== */}
+      {offerProducts.length > 0 && (
+        <RevealSection id="ofertas" className="py-24 sm:py-32 bg-gradient-to-b from-black via-zinc-950 to-black relative overflow-hidden">
+          <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-orange-500/50 to-transparent" />
+          <div className="absolute inset-0 opacity-5">
+            <div className="absolute top-1/3 left-1/4 w-96 h-96 bg-orange-500 rounded-full blur-[150px]" />
+            <div className="absolute bottom-1/3 right-1/4 w-72 h-72 bg-red-500 rounded-full blur-[120px]" />
+          </div>
+          <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center mb-16 space-y-4">
+              <div className="inline-flex items-center gap-2 bg-orange-500/10 border border-orange-500/30 px-4 py-2 rounded-full">
+                <Flame className="w-5 h-5 text-orange-500 animate-pulse" />
+                <span className="text-orange-400 uppercase tracking-[0.3em] text-xs font-medium">Ofertas Calientes</span>
+                <Flame className="w-5 h-5 text-orange-500 animate-pulse" />
+              </div>
+              <h2 className="text-3xl sm:text-5xl font-extralight tracking-tight">
+                <span className="bg-gradient-to-r from-orange-400 via-red-400 to-orange-500 bg-clip-text text-transparent">
+                  Precios de Fuego
+                </span>
+              </h2>
+              <p className="text-white/40 text-sm font-light max-w-md mx-auto">
+                Aprovecha estas ofertas exclusivas por tiempo limitado. ¡No dejes escapar estas oportunidades!
+              </p>
+            </div>
+
+            {/* Offers Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
+              {offerProducts.map(product => {
+                const discount = product.offerPrice ? Math.round(((product.salePrice - product.offerPrice) / product.salePrice) * 100) : 0
+                const inCart = carrito.find(c => c.id === product.id)
+                return (
+                  <div key={product.id} className="group relative bg-white/5 border border-orange-500/20 hover:border-orange-500/50 transition-all duration-500 overflow-hidden">
+                    {/* Discount Badge */}
+                    <div className="absolute top-2 left-2 z-10 flex items-center gap-1 bg-gradient-to-r from-red-600 to-orange-600 text-white text-xs font-bold px-2.5 py-1 rounded-sm shadow-lg shadow-red-500/30">
+                      <Flame className="w-3 h-3" />
+                      -{discount}%
+                    </div>
+                    {product.offerLabel && (
+                      <div className="absolute top-2 right-2 z-10 bg-black/70 backdrop-blur-sm text-orange-400 text-[10px] font-medium px-2 py-1 uppercase tracking-wider">
+                        {product.offerLabel}
+                      </div>
+                    )}
+
+                    {/* Product Image */}
+                    <div className="relative aspect-square bg-black/50 overflow-hidden cursor-pointer" onClick={() => openProductModal(product)}>
+                      {product.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={ensureAbsoluteUrl(product.imageUrl)} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center"><Sparkles className="w-8 h-8 text-white/10" /></div>
+                      )}
+                      {/* Quick Add overlay */}
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center gap-2">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); openProductModal(product) }}
+                          className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 text-xs uppercase tracking-wider font-medium transition-all duration-300 transform translate-y-4 group-hover:translate-y-0 backdrop-blur-sm border border-white/20"
+                        >
+                          <Eye className="w-4 h-4 inline mr-1" />
+                          Ver
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); agregarAlCarrito(product) }}
+                          className="bg-orange-500 hover:bg-orange-400 text-black px-4 py-2 text-xs uppercase tracking-wider font-medium transition-all duration-300 transform translate-y-4 group-hover:translate-y-0 flex items-center gap-1"
+                        >
+                          <ShoppingCart className="w-4 h-4" />
+                          {inCart ? `(${inCart.cantidad})` : 'Agregar'}
+                        </button>
+                      </div>
+                      {product.brand && (
+                        <div className="absolute bottom-2 left-2 bg-black/70 backdrop-blur-sm px-2 py-1 text-[10px] text-white/70 uppercase tracking-wider">{product.brand}</div>
+                      )}
+                    </div>
+
+                    {/* Product Info */}
+                    <div className="p-3 sm:p-4 space-y-2">
+                      <h3 className="text-sm font-light text-white truncate cursor-pointer hover:text-orange-400 transition-colors" onClick={() => openProductModal(product)}>{product.name}</h3>
+                      {product.description && <p className="text-xs text-white/30 font-light line-clamp-1">{product.description}</p>}
+                      <div className="flex items-end gap-2 pt-1">
+                        <span className="text-orange-400 font-medium text-base">{formatCOP(product.offerPrice || product.salePrice)}</span>
+                        {product.offerPrice && (
+                          <span className="text-white/30 text-xs line-through">{formatCOP(product.salePrice)}</span>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => agregarAlCarrito(product)}
+                        className="w-full mt-2 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-400 hover:to-red-400 text-white py-2 text-xs uppercase tracking-wider font-medium transition-all duration-300 flex items-center justify-center gap-1.5"
+                      >
+                        <Zap className="w-3.5 h-3.5" />
+                        Comprar Ahora
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </RevealSection>
+      )}
 
       {/* ========== PERFUMES / TIENDA ONLINE ========== */}
       <RevealSection id="perfumes" className="py-24 sm:py-32 bg-zinc-950 relative">
@@ -837,10 +1026,19 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
               {filteredProducts.map(product => {
                 const inCart = carrito.find(c => c.id === product.id)
+                const isOffer = product.isOnOffer && product.offerPrice
+                const discount = isOffer ? Math.round(((product.salePrice - product.offerPrice!) / product.salePrice) * 100) : 0
                 return (
-                  <div key={product.id} className="group relative bg-white/5 border border-white/10 hover:border-amber-500/30 transition-all duration-500 overflow-hidden">
+                  <div key={product.id} className={`group relative bg-white/5 border ${isOffer ? 'border-orange-500/30 hover:border-orange-500/50' : 'border-white/10 hover:border-amber-500/30'} transition-all duration-500 overflow-hidden`}>
+                    {/* Offer badge */}
+                    {isOffer && (
+                      <div className="absolute top-2 right-2 z-10 flex items-center gap-1 bg-gradient-to-r from-red-600 to-orange-600 text-white text-[10px] font-bold px-2 py-1 rounded-sm shadow-lg shadow-red-500/20">
+                        <Flame className="w-3 h-3" />
+                        -{discount}%
+                      </div>
+                    )}
                     {/* Product Image */}
-                    <div className="relative aspect-square bg-black/50 overflow-hidden">
+                    <div className="relative aspect-square bg-black/50 overflow-hidden cursor-pointer" onClick={() => openProductModal(product)}>
                       {product.imageUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={ensureAbsoluteUrl(product.imageUrl)} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
@@ -848,13 +1046,20 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                         <div className="w-full h-full flex items-center justify-center"><Sparkles className="w-8 h-8 text-white/10" /></div>
                       )}
                       {/* Quick Add overlay */}
-                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center gap-2">
                         <button
-                          onClick={() => agregarAlCarrito(product)}
-                          className="bg-amber-500 hover:bg-amber-400 text-black px-6 py-3 text-xs uppercase tracking-wider font-medium transition-all duration-300 transform translate-y-4 group-hover:translate-y-0 flex items-center gap-2"
+                          onClick={(e) => { e.stopPropagation(); openProductModal(product) }}
+                          className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 text-xs uppercase tracking-wider font-medium transition-all duration-300 transform translate-y-4 group-hover:translate-y-0 backdrop-blur-sm border border-white/20"
+                        >
+                          <Eye className="w-4 h-4 inline mr-1" />
+                          Ver
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); agregarAlCarrito(product) }}
+                          className="bg-amber-500 hover:bg-amber-400 text-black px-4 py-2 text-xs uppercase tracking-wider font-medium transition-all duration-300 transform translate-y-4 group-hover:translate-y-0 flex items-center gap-2"
                         >
                           <ShoppingCart className="w-4 h-4" />
-                          {inCart ? `En carrito (${inCart.cantidad})` : 'Agregar'}
+                          {inCart ? `(${inCart.cantidad})` : 'Agregar'}
                         </button>
                       </div>
                       {product.brand && (
@@ -863,10 +1068,19 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                     </div>
                     {/* Product Info */}
                     <div className="p-3 sm:p-4 space-y-1">
-                      <h3 className="text-sm font-light text-white truncate">{product.name}</h3>
+                      <h3 className="text-sm font-light text-white truncate cursor-pointer hover:text-amber-400 transition-colors" onClick={() => openProductModal(product)}>{product.name}</h3>
                       {product.description && <p className="text-xs text-white/30 font-light line-clamp-2">{product.description}</p>}
                       <div className="flex items-center justify-between pt-2">
-                        <span className="text-amber-400 font-light text-sm">{formatCOP(product.salePrice)}</span>
+                        <div className="flex items-center gap-2">
+                          {isOffer ? (
+                            <>
+                              <span className="text-orange-400 font-medium text-sm">{formatCOP(product.offerPrice!)}</span>
+                              <span className="text-white/30 text-xs line-through">{formatCOP(product.salePrice)}</span>
+                            </>
+                          ) : (
+                            <span className="text-amber-400 font-light text-sm">{formatCOP(product.salePrice)}</span>
+                          )}
+                        </div>
                         <button onClick={() => agregarAlCarrito(product)} className="p-2 text-white/30 hover:text-amber-400 transition-colors" title="Agregar al carrito">
                           <Plus className="w-4 h-4" />
                         </button>
@@ -1180,7 +1394,191 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
           </div>
         </>
       )}
-      {/* ========== DECANT MODAL ========== */}
+      {/* ========== PRODUCT DETAIL MODAL (Shopify-style) ========== */}
+      {showProductModal && selectedProduct && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-300" onClick={closeProductModal}>
+          <div className="bg-zinc-950 border border-white/10 w-full max-w-3xl max-h-[90vh] overflow-y-auto relative shadow-2xl" onClick={e => e.stopPropagation()}>
+            <button
+              onClick={closeProductModal}
+              className="absolute top-4 right-4 z-10 text-white/30 hover:text-white transition-colors bg-black/50 backdrop-blur-sm rounded-full p-2"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="grid grid-cols-1 md:grid-cols-2">
+              {/* Product Image */}
+              <div className="relative aspect-square bg-black overflow-hidden">
+                {selectedProduct.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={ensureAbsoluteUrl(selectedProduct.imageUrl)} alt={selectedProduct.name} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center bg-zinc-900">
+                    <Sparkles className="w-16 h-16 text-white/10" />
+                  </div>
+                )}
+                {/* Offer badge on image */}
+                {selectedProduct.isOnOffer && selectedProduct.offerPrice && (
+                  <div className="absolute top-4 left-4 flex flex-col gap-2">
+                    <div className="flex items-center gap-1.5 bg-gradient-to-r from-red-600 to-orange-600 text-white text-sm font-bold px-3 py-1.5 rounded-sm shadow-lg shadow-red-500/30">
+                      <Flame className="w-4 h-4" />
+                      -{Math.round(((selectedProduct.salePrice - selectedProduct.offerPrice) / selectedProduct.salePrice) * 100)}% OFF
+                    </div>
+                    {selectedProduct.offerLabel && (
+                      <div className="bg-black/70 backdrop-blur-sm text-orange-400 text-xs font-medium px-3 py-1 uppercase tracking-wider">
+                        {selectedProduct.offerLabel}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Product Details */}
+              <div className="p-6 sm:p-8 space-y-6 flex flex-col">
+                {/* Brand & Category */}
+                <div className="space-y-1">
+                  {selectedProduct.brand && (
+                    <p className="text-amber-400/60 uppercase tracking-[0.3em] text-[11px] font-medium">{selectedProduct.brand}</p>
+                  )}
+                  <h2 className="text-2xl sm:text-3xl font-light text-white leading-tight">{selectedProduct.name}</h2>
+                  <div className="flex items-center gap-2 pt-1">
+                    <span className="text-[10px] text-white/40 uppercase tracking-widest border border-white/10 px-2 py-0.5">{selectedProduct.category}</span>
+                    {selectedProduct.gender && (
+                      <span className="text-[10px] text-white/40 uppercase tracking-widest border border-white/10 px-2 py-0.5">{selectedProduct.gender}</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Price */}
+                <div className="space-y-1">
+                  {selectedProduct.isOnOffer && selectedProduct.offerPrice ? (
+                    <div className="flex items-end gap-3">
+                      <span className="text-3xl font-light text-orange-400">{formatCOP(selectedProduct.offerPrice)}</span>
+                      <span className="text-lg text-white/30 line-through pb-0.5">{formatCOP(selectedProduct.salePrice)}</span>
+                    </div>
+                  ) : (
+                    <span className="text-3xl font-light text-amber-400">{formatCOP(selectedProduct.salePrice)}</span>
+                  )}
+                  {selectedProduct.isOnOffer && selectedProduct.offerPrice && (
+                    <p className="text-sm text-green-400 font-light">
+                      Ahorras {formatCOP(selectedProduct.salePrice - selectedProduct.offerPrice)}
+                    </p>
+                  )}
+                </div>
+
+                {/* Description */}
+                {selectedProduct.description && (
+                  <div className="space-y-2">
+                    <h4 className="text-xs text-white/50 uppercase tracking-widest">Descripción</h4>
+                    <p className="text-sm text-white/70 font-light leading-relaxed">{selectedProduct.description}</p>
+                  </div>
+                )}
+
+                {/* Specifications */}
+                <div className="space-y-2">
+                  <h4 className="text-xs text-white/50 uppercase tracking-widest">Especificaciones</h4>
+                  <div className="grid grid-cols-2 gap-2">
+                    {selectedProduct.category && (
+                      <div className="bg-white/5 px-3 py-2 border border-white/5">
+                        <p className="text-[10px] text-white/30 uppercase">Categoría</p>
+                        <p className="text-sm text-white/80 font-light">{selectedProduct.category}</p>
+                      </div>
+                    )}
+                    {selectedProduct.brand && (
+                      <div className="bg-white/5 px-3 py-2 border border-white/5">
+                        <p className="text-[10px] text-white/30 uppercase">Marca</p>
+                        <p className="text-sm text-white/80 font-light">{selectedProduct.brand}</p>
+                      </div>
+                    )}
+                    {selectedProduct.size && (
+                      <div className="bg-white/5 px-3 py-2 border border-white/5">
+                        <p className="text-[10px] text-white/30 uppercase">Tamaño</p>
+                        <p className="text-sm text-white/80 font-light">{selectedProduct.size}</p>
+                      </div>
+                    )}
+                    {selectedProduct.color && (
+                      <div className="bg-white/5 px-3 py-2 border border-white/5">
+                        <p className="text-[10px] text-white/30 uppercase">Color</p>
+                        <p className="text-sm text-white/80 font-light">{selectedProduct.color}</p>
+                      </div>
+                    )}
+                    {selectedProduct.gender && (
+                      <div className="bg-white/5 px-3 py-2 border border-white/5">
+                        <p className="text-[10px] text-white/30 uppercase">Género</p>
+                        <p className="text-sm text-white/80 font-light capitalize">{selectedProduct.gender}</p>
+                      </div>
+                    )}
+                    {selectedProduct.material && (
+                      <div className="bg-white/5 px-3 py-2 border border-white/5">
+                        <p className="text-[10px] text-white/30 uppercase">Material</p>
+                        <p className="text-sm text-white/80 font-light">{selectedProduct.material}</p>
+                      </div>
+                    )}
+                    {selectedProduct.netWeight && (
+                      <div className="bg-white/5 px-3 py-2 border border-white/5">
+                        <p className="text-[10px] text-white/30 uppercase">Peso</p>
+                        <p className="text-sm text-white/80 font-light">{selectedProduct.netWeight} {selectedProduct.weightUnit || ''}</p>
+                      </div>
+                    )}
+                    {selectedProduct.dimensions && (
+                      <div className="bg-white/5 px-3 py-2 border border-white/5">
+                        <p className="text-[10px] text-white/30 uppercase">Dimensiones</p>
+                        <p className="text-sm text-white/80 font-light">{selectedProduct.dimensions}</p>
+                      </div>
+                    )}
+                    {selectedProduct.warrantyMonths && (
+                      <div className="bg-white/5 px-3 py-2 border border-white/5">
+                        <p className="text-[10px] text-white/30 uppercase">Garantía</p>
+                        <p className="text-sm text-white/80 font-light">{selectedProduct.warrantyMonths} meses</p>
+                      </div>
+                    )}
+                    <div className="bg-white/5 px-3 py-2 border border-white/5">
+                      <p className="text-[10px] text-white/30 uppercase">Disponibilidad</p>
+                      <p className={`text-sm font-light ${selectedProduct.stock > 5 ? 'text-green-400' : selectedProduct.stock > 0 ? 'text-yellow-400' : 'text-red-400'}`}>
+                        {selectedProduct.stock > 5 ? 'En stock' : selectedProduct.stock > 0 ? `Últimas ${selectedProduct.stock} unidades` : 'Agotado'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Quantity + Add to Cart */}
+                <div className="mt-auto space-y-3 pt-4 border-t border-white/10">
+                  <div className="flex items-center gap-4">
+                    <span className="text-xs text-white/50 uppercase tracking-widest">Cantidad</span>
+                    <div className="flex items-center border border-white/10">
+                      <button
+                        onClick={() => setProductQuantity(q => Math.max(1, q - 1))}
+                        className="w-10 h-10 flex items-center justify-center text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+                      >
+                        <Minus className="w-4 h-4" />
+                      </button>
+                      <span className="w-12 text-center text-white text-sm font-light">{productQuantity}</span>
+                      <button
+                        onClick={() => setProductQuantity(q => Math.min(selectedProduct.stock, q + 1))}
+                        className="w-10 h-10 flex items-center justify-center text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                  <button
+                    onClick={addFromModal}
+                    disabled={selectedProduct.stock === 0}
+                    className={`w-full py-4 text-xs uppercase tracking-[0.2em] font-medium transition-all duration-300 flex items-center justify-center gap-2 ${
+                      selectedProduct.isOnOffer && selectedProduct.offerPrice
+                        ? 'bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-400 hover:to-red-400 text-white'
+                        : 'bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-black'
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                    <ShoppingCart className="w-5 h-5" />
+                    {selectedProduct.stock === 0 ? 'Agotado' : 'Agregar al Carrito'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ========== DECANT MODAL ========== */}
       {showDecantModal && decantProduct && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-300">

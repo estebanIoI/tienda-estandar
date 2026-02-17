@@ -69,13 +69,15 @@ router.get(
 
       // Get products (only public-safe fields)
       const [rows] = await pool.query(
-        `SELECT 
+        `SELECT
           p.id, p.name, p.category, p.brand, p.description,
           p.sale_price as salePrice, p.image_url as imageUrl,
-          p.stock, p.color, p.size, p.gender
-        FROM products p 
+          p.stock, p.color, p.size, p.gender,
+          p.is_on_offer as isOnOffer, p.offer_price as offerPrice,
+          p.offer_label as offerLabel
+        FROM products p
         ${whereClause}
-        ORDER BY p.name ASC
+        ORDER BY p.is_on_offer DESC, p.name ASC
         LIMIT ? OFFSET ?`,
         [...params, limit, offset]
       ) as any;
@@ -241,17 +243,20 @@ router.get(
 
       const [rows] = await pool.query(
         `SELECT id, name, category, brand, sale_price as salePrice, image_url as imageUrl,
-                stock, IF(published_in_store, 1, 0) as publishedInStore
+                stock, IF(published_in_store, 1, 0) as publishedInStore,
+                IF(is_on_offer, 1, 0) as isOnOffer,
+                offer_price as offerPrice, offer_label as offerLabel, offer_end as offerEnd
          FROM products
          WHERE tenant_id = ?
          ORDER BY name ASC`,
         [tenantId]
       ) as any;
 
-      // Ensure publishedInStore is a proper boolean (mysql2 may return Buffer for TINYINT/BIT)
+      // Ensure boolean fields are proper booleans (mysql2 may return Buffer for TINYINT/BIT)
       const data = (rows as any[]).map((r: any) => ({
         ...r,
         publishedInStore: Number(r.publishedInStore) === 1,
+        isOnOffer: Number(r.isOnOffer) === 1,
       }));
 
       res.json({ success: true, data });
@@ -261,5 +266,106 @@ router.get(
     }
   }
 );
+
+// =============================================
+// OFFERS: Endpoints para gestionar ofertas
+// =============================================
+
+// PUT /api/storefront/offer/:productId — Toggle oferta de un producto
+router.put(
+  '/offer/:productId',
+  authenticate,
+  async (req: Request, res: Response) => {
+    try {
+      const tenantId = (req as any).user.tenantId;
+      const { productId } = req.params;
+      const { isOnOffer, offerPrice, offerLabel, offerEnd } = req.body;
+
+      if (typeof isOnOffer !== 'boolean') {
+        res.status(400).json({ success: false, error: 'El campo "isOnOffer" debe ser verdadero o falso' });
+        return;
+      }
+
+      if (isOnOffer && (!offerPrice || offerPrice <= 0)) {
+        res.status(400).json({ success: false, error: 'El precio de oferta debe ser mayor a 0' });
+        return;
+      }
+
+      const [result] = await pool.query(
+        `UPDATE products SET
+          is_on_offer = ?,
+          offer_price = ?,
+          offer_label = ?,
+          offer_start = ${isOnOffer ? 'NOW()' : 'NULL'},
+          offer_end = ?
+        WHERE id = ? AND tenant_id = ?`,
+        [
+          isOnOffer ? 1 : 0,
+          isOnOffer ? offerPrice : null,
+          isOnOffer ? (offerLabel || null) : null,
+          isOnOffer && offerEnd ? offerEnd : null,
+          productId,
+          tenantId,
+        ]
+      ) as any;
+
+      if (result.affectedRows === 0) {
+        res.status(404).json({ success: false, error: 'Producto no encontrado' });
+        return;
+      }
+
+      res.json({ success: true, data: { id: productId, isOnOffer, offerPrice: isOnOffer ? offerPrice : null } });
+    } catch (error) {
+      console.error('Toggle offer error:', error);
+      res.status(500).json({ success: false, error: 'Error al actualizar oferta' });
+    }
+  }
+);
+
+// GET /api/storefront/offers — Public: productos en oferta
+router.get('/offers', async (req: Request, res: Response) => {
+  try {
+    const store = req.query.store as string | undefined;
+    let tenantFilter = '';
+    const params: any[] = [];
+
+    if (store && store !== 'all') {
+      const [tenants] = await pool.query(
+        'SELECT id FROM tenants WHERE status = ? AND slug = ? LIMIT 1',
+        ['activo', store]
+      ) as any;
+      if (tenants && tenants.length > 0) {
+        tenantFilter = 'AND p.tenant_id = ?';
+        params.push(tenants[0].id);
+      }
+    }
+
+    const [rows] = await pool.query(
+      `SELECT
+        p.id, p.name, p.category, p.brand, p.description,
+        p.sale_price as salePrice, p.offer_price as offerPrice,
+        p.image_url as imageUrl, p.stock, p.color, p.size, p.gender,
+        p.offer_label as offerLabel, p.offer_end as offerEnd,
+        p.product_type as productType,
+        p.material, p.net_weight as netWeight, p.weight_unit as weightUnit,
+        p.warranty_months as warrantyMonths, p.dimensions
+      FROM products p
+      WHERE p.is_on_offer = 1
+        AND p.published_in_store = 1
+        AND p.stock > 0
+        AND p.tenant_id IN (SELECT id FROM tenants WHERE status = 'activo')
+        AND (p.offer_end IS NULL OR p.offer_end > NOW())
+        ${tenantFilter}
+      ORDER BY p.updated_at DESC
+      LIMIT 20`,
+      params
+    ) as any;
+
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    console.error('Get offers error:', error);
+    res.status(500).json({ success: false, error: 'Error al obtener ofertas' });
+  }
+});
 
 export const storefrontRoutes = router;

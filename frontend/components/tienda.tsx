@@ -18,6 +18,11 @@ import {
   Filter,
   Globe,
   ShoppingBag,
+  Flame,
+  X,
+  DollarSign,
+  Tag,
+  Calendar,
 } from 'lucide-react'
 
 interface StoreProduct {
@@ -29,6 +34,10 @@ interface StoreProduct {
   imageUrl: string | null
   stock: number
   publishedInStore: boolean
+  isOnOffer: boolean
+  offerPrice: number | null
+  offerLabel: string | null
+  offerEnd: string | null
 }
 
 export function Tienda() {
@@ -36,12 +45,19 @@ export function Tienda() {
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
-  const [filterPublished, setFilterPublished] = useState<'all' | 'published' | 'unpublished'>('all')
+  const [filterPublished, setFilterPublished] = useState<'all' | 'published' | 'unpublished' | 'offers'>('all')
   const [togglingIds, setTogglingIds] = useState<Set<string>>(new Set())
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [stats, setStats] = useState({ total: 0, published: 0, unpublished: 0 })
+  const [stats, setStats] = useState({ total: 0, published: 0, unpublished: 0, offers: 0 })
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+
+  // Offer modal state
+  const [offerModal, setOfferModal] = useState<{ open: boolean; product: StoreProduct | null }>({ open: false, product: null })
+  const [offerPrice, setOfferPrice] = useState('')
+  const [offerLabel, setOfferLabel] = useState('')
+  const [offerEnd, setOfferEnd] = useState('')
+  const [savingOffer, setSavingOffer] = useState(false)
 
   const fetchProducts = useCallback(async () => {
     setLoading(true)
@@ -50,12 +66,13 @@ export function Tienda() {
       if (result.success && result.data) {
         const prods = (Array.isArray(result.data) ? result.data : []).map((p: any) => ({
           ...p,
-          // Ensure publishedInStore is a proper boolean (handle Buffer/number from MySQL)
           publishedInStore: p.publishedInStore === true || p.publishedInStore === 1 || Number(p.publishedInStore) === 1,
+          isOnOffer: p.isOnOffer === true || p.isOnOffer === 1 || Number(p.isOnOffer) === 1,
         }))
         setProducts(prods)
         const published = prods.filter((p: StoreProduct) => p.publishedInStore).length
-        setStats({ total: prods.length, published, unpublished: prods.length - published })
+        const offers = prods.filter((p: StoreProduct) => p.isOnOffer).length
+        setStats({ total: prods.length, published, unpublished: prods.length - published, offers })
       }
     } catch (error) {
       console.error('Error fetching products:', error)
@@ -68,7 +85,6 @@ export function Tienda() {
     fetchProducts()
   }, [fetchProducts])
 
-  // Auto-dismiss error messages
   useEffect(() => {
     if (errorMsg) {
       const timer = setTimeout(() => setErrorMsg(null), 4000)
@@ -92,13 +108,77 @@ export function Tienda() {
         }))
       } else {
         setErrorMsg(result.error || 'Error al cambiar la visibilidad del producto')
-        // Re-fetch to ensure state consistency
         await fetchProducts()
       }
     } catch (error) {
       console.error('Error toggling publish:', error)
       setErrorMsg('Error de conexión al cambiar la visibilidad del producto')
       await fetchProducts()
+    } finally {
+      setTogglingIds(prev => {
+        const next = new Set(prev)
+        next.delete(productId)
+        return next
+      })
+    }
+  }
+
+  const openOfferModal = (product: StoreProduct) => {
+    setOfferModal({ open: true, product })
+    setOfferPrice(product.isOnOffer && product.offerPrice ? String(product.offerPrice) : '')
+    setOfferLabel(product.offerLabel || '')
+    setOfferEnd(product.offerEnd ? product.offerEnd.slice(0, 16) : '')
+  }
+
+  const handleSaveOffer = async () => {
+    if (!offerModal.product) return
+    const price = parseFloat(offerPrice)
+    if (!price || price <= 0) {
+      setErrorMsg('El precio de oferta debe ser mayor a 0')
+      return
+    }
+    if (price >= offerModal.product.salePrice) {
+      setErrorMsg('El precio de oferta debe ser menor al precio de venta')
+      return
+    }
+    setSavingOffer(true)
+    try {
+      const result = await api.toggleProductOffer(offerModal.product.id, {
+        isOnOffer: true,
+        offerPrice: price,
+        offerLabel: offerLabel || undefined,
+        offerEnd: offerEnd || undefined,
+      })
+      if (result.success) {
+        setProducts(prev => prev.map(p =>
+          p.id === offerModal.product!.id ? { ...p, isOnOffer: true, offerPrice: price, offerLabel: offerLabel || null, offerEnd: offerEnd || null } : p
+        ))
+        setStats(prev => ({ ...prev, offers: prev.offers + (offerModal.product!.isOnOffer ? 0 : 1) }))
+        setOfferModal({ open: false, product: null })
+      } else {
+        setErrorMsg(result.error || 'Error al activar oferta')
+      }
+    } catch {
+      setErrorMsg('Error de conexión al activar oferta')
+    } finally {
+      setSavingOffer(false)
+    }
+  }
+
+  const handleRemoveOffer = async (productId: string) => {
+    setTogglingIds(prev => new Set(prev).add(productId))
+    try {
+      const result = await api.toggleProductOffer(productId, { isOnOffer: false })
+      if (result.success) {
+        setProducts(prev => prev.map(p =>
+          p.id === productId ? { ...p, isOnOffer: false, offerPrice: null, offerLabel: null, offerEnd: null } : p
+        ))
+        setStats(prev => ({ ...prev, offers: Math.max(0, prev.offers - 1) }))
+      } else {
+        setErrorMsg(result.error || 'Error al quitar oferta')
+      }
+    } catch {
+      setErrorMsg('Error de conexión al quitar oferta')
     } finally {
       setTogglingIds(prev => {
         const next = new Set(prev)
@@ -140,14 +220,13 @@ export function Tienda() {
     }
   }
 
-  // Get unique categories
   const categories = Array.from(new Set(products.map(p => p.category))).sort()
 
-  // Filter products
   const filteredProducts = products.filter(p => {
     if (selectedCategory !== 'all' && p.category !== selectedCategory) return false
     if (filterPublished === 'published' && !p.publishedInStore) return false
     if (filterPublished === 'unpublished' && p.publishedInStore) return false
+    if (filterPublished === 'offers' && !p.isOnOffer) return false
     if (searchQuery) {
       const q = searchQuery.toLowerCase()
       return (
@@ -162,6 +241,8 @@ export function Tienda() {
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value)
 
+  const calcDiscount = (sale: number, offer: number) => Math.round(((sale - offer) / sale) * 100)
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -172,7 +253,7 @@ export function Tienda() {
             Mi Tienda Online
           </h1>
           <p className="text-muted-foreground mt-1">
-            Gestiona qué productos se muestran en tu catálogo público
+            Gestiona productos, publicaciones y ofertas de tu catálogo
           </p>
         </div>
         <div className="flex gap-2">
@@ -203,14 +284,14 @@ export function Tienda() {
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <Card>
           <CardContent className="flex items-center gap-4 p-4">
             <div className="rounded-full bg-blue-100 p-3 dark:bg-blue-900/30">
               <Package className="h-5 w-5 text-blue-600 dark:text-blue-400" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Total Productos</p>
+              <p className="text-sm text-muted-foreground">Total</p>
               <p className="text-2xl font-bold">{stats.total}</p>
             </div>
           </CardContent>
@@ -223,6 +304,17 @@ export function Tienda() {
             <div>
               <p className="text-sm text-muted-foreground">Publicados</p>
               <p className="text-2xl font-bold text-green-600">{stats.published}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center gap-4 p-4">
+            <div className="rounded-full bg-orange-100 p-3 dark:bg-orange-900/30">
+              <Flame className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">En Oferta</p>
+              <p className="text-2xl font-bold text-orange-600">{stats.offers}</p>
             </div>
           </CardContent>
         </Card>
@@ -264,15 +356,17 @@ export function Tienda() {
               ))}
             </select>
 
-            <div className="flex gap-1">
-              {(['all', 'published', 'unpublished'] as const).map(f => (
+            <div className="flex gap-1 flex-wrap">
+              {(['all', 'published', 'offers', 'unpublished'] as const).map(f => (
                 <Button
                   key={f}
                   variant={filterPublished === f ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => setFilterPublished(f)}
+                  className={f === 'offers' && filterPublished === f ? 'bg-orange-600 hover:bg-orange-700' : ''}
                 >
-                  {f === 'all' ? 'Todos' : f === 'published' ? 'Publicados' : 'Sin publicar'}
+                  {f === 'offers' && <Flame className="h-3 w-3 mr-1" />}
+                  {f === 'all' ? 'Todos' : f === 'published' ? 'Publicados' : f === 'offers' ? 'Ofertas' : 'Sin publicar'}
                 </Button>
               ))}
             </div>
@@ -319,13 +413,14 @@ export function Tienda() {
             const isPublished = !!product.publishedInStore
             const isToggling = togglingIds.has(product.id)
             const isSelected = selectedIds.has(product.id)
+            const isOffer = !!product.isOnOffer
 
             return (
               <Card
                 key={product.id}
-                className={`overflow-hidden transition-all ${
+                className={`overflow-hidden transition-all relative ${
                   isSelected ? 'ring-2 ring-primary' : ''
-                } ${isPublished ? 'border-green-200 dark:border-green-800' : ''}`}
+                } ${isOffer ? 'border-orange-300 dark:border-orange-700 shadow-orange-100 dark:shadow-orange-900/20' : isPublished ? 'border-green-200 dark:border-green-800' : ''}`}
               >
                 {selectMode && (
                   <div className="absolute top-2 left-2 z-10">
@@ -356,20 +451,28 @@ export function Tienda() {
                     </div>
                   )}
 
-                  {/* Published indicator */}
-                  <div className="absolute top-2 right-2">
+                  {/* Badges top-right */}
+                  <div className="absolute top-2 right-2 flex flex-col gap-1">
                     <Badge variant={isPublished ? 'default' : 'secondary'} className="text-xs">
                       {isPublished ? (
-                        <>
-                          <Eye className="h-3 w-3 mr-1" /> Visible
-                        </>
+                        <><Eye className="h-3 w-3 mr-1" /> Visible</>
                       ) : (
-                        <>
-                          <EyeOff className="h-3 w-3 mr-1" /> Oculto
-                        </>
+                        <><EyeOff className="h-3 w-3 mr-1" /> Oculto</>
                       )}
                     </Badge>
+                    {isOffer && (
+                      <Badge className="text-xs bg-orange-600 hover:bg-orange-700 text-white">
+                        <Flame className="h-3 w-3 mr-1" /> Oferta
+                      </Badge>
+                    )}
                   </div>
+
+                  {/* Discount badge */}
+                  {isOffer && product.offerPrice && (
+                    <div className="absolute top-2 left-2 bg-red-600 text-white text-xs font-bold px-2 py-1 rounded-sm">
+                      -{calcDiscount(product.salePrice, product.offerPrice)}%
+                    </div>
+                  )}
                 </div>
 
                 <CardContent className="p-4 space-y-3">
@@ -384,35 +487,182 @@ export function Tienda() {
                   </div>
 
                   <div className="flex items-center justify-between">
-                    <span className="text-lg font-bold text-primary">
-                      {formatCurrency(product.salePrice)}
-                    </span>
+                    <div className="flex flex-col">
+                      {isOffer && product.offerPrice ? (
+                        <>
+                          <span className="text-lg font-bold text-orange-600">
+                            {formatCurrency(product.offerPrice)}
+                          </span>
+                          <span className="text-xs text-muted-foreground line-through">
+                            {formatCurrency(product.salePrice)}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-lg font-bold text-primary">
+                          {formatCurrency(product.salePrice)}
+                        </span>
+                      )}
+                    </div>
                     <span className="text-xs text-muted-foreground">
                       Stock: {product.stock}
                     </span>
                   </div>
 
-                  <Button
-                    variant={isPublished ? 'outline' : 'default'}
-                    size="sm"
-                    className="w-full"
-                    disabled={isToggling}
-                    onClick={() => togglePublish(product.id, isPublished)}
-                  >
-                    {isToggling ? (
-                      <RefreshCw className="h-4 w-4 animate-spin mr-2" />
-                    ) : isPublished ? (
-                      <EyeOff className="h-4 w-4 mr-2" />
+                  {/* Action buttons */}
+                  <div className="flex gap-2">
+                    <Button
+                      variant={isPublished ? 'outline' : 'default'}
+                      size="sm"
+                      className="flex-1"
+                      disabled={isToggling}
+                      onClick={() => togglePublish(product.id, isPublished)}
+                    >
+                      {isToggling ? (
+                        <RefreshCw className="h-4 w-4 animate-spin mr-1" />
+                      ) : isPublished ? (
+                        <EyeOff className="h-4 w-4 mr-1" />
+                      ) : (
+                        <Eye className="h-4 w-4 mr-1" />
+                      )}
+                      {isToggling ? '...' : isPublished ? 'Ocultar' : 'Publicar'}
+                    </Button>
+                    {isOffer ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-orange-300 text-orange-600 hover:bg-orange-50 dark:border-orange-700 dark:text-orange-400 dark:hover:bg-orange-900/20"
+                        disabled={isToggling}
+                        onClick={() => handleRemoveOffer(product.id)}
+                        title="Quitar oferta"
+                      >
+                        <X className="h-4 w-4 mr-1" />
+                        Oferta
+                      </Button>
                     ) : (
-                      <Eye className="h-4 w-4 mr-2" />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-orange-300 text-orange-600 hover:bg-orange-50 dark:border-orange-700 dark:text-orange-400 dark:hover:bg-orange-900/20"
+                        disabled={isToggling || !isPublished}
+                        onClick={() => openOfferModal(product)}
+                        title={!isPublished ? 'Publica el producto primero' : 'Poner en oferta'}
+                      >
+                        <Flame className="h-4 w-4 mr-1" />
+                        Oferta
+                      </Button>
                     )}
-                    {isToggling ? 'Actualizando...' : isPublished ? 'Ocultar del catálogo' : 'Publicar en catálogo'}
-                  </Button>
+                  </div>
+                  {isOffer && product.offerLabel && (
+                    <p className="text-xs text-orange-600 dark:text-orange-400 flex items-center gap-1">
+                      <Tag className="h-3 w-3" /> {product.offerLabel}
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             )
           })}
         </div>
+      )}
+
+      {/* ========== OFFER MODAL ========== */}
+      {offerModal.open && offerModal.product && (
+        <>
+          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" onClick={() => setOfferModal({ open: false, product: null })} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="bg-background border rounded-xl shadow-2xl w-full max-w-md p-6 space-y-6 relative animate-in fade-in zoom-in-95 duration-200">
+              <button
+                onClick={() => setOfferModal({ open: false, product: null })}
+                className="absolute top-4 right-4 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-orange-600">
+                  <Flame className="h-5 w-5" />
+                  <h3 className="text-lg font-semibold">Poner en Oferta</h3>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {offerModal.product.name}
+                </p>
+                <p className="text-sm">
+                  Precio actual: <span className="font-semibold">{formatCurrency(offerModal.product.salePrice)}</span>
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium flex items-center gap-2">
+                    <DollarSign className="h-4 w-4 text-orange-600" />
+                    Precio de Oferta *
+                  </label>
+                  <Input
+                    type="number"
+                    placeholder="Ej: 25000"
+                    value={offerPrice}
+                    onChange={e => setOfferPrice(e.target.value)}
+                    min={1}
+                    max={offerModal.product.salePrice - 1}
+                  />
+                  {offerPrice && parseFloat(offerPrice) > 0 && parseFloat(offerPrice) < offerModal.product.salePrice && (
+                    <p className="text-xs text-orange-600 font-medium">
+                      Descuento del {calcDiscount(offerModal.product.salePrice, parseFloat(offerPrice))}% - Ahorro de {formatCurrency(offerModal.product.salePrice - parseFloat(offerPrice))}
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium flex items-center gap-2">
+                    <Tag className="h-4 w-4 text-orange-600" />
+                    Etiqueta (opcional)
+                  </label>
+                  <Input
+                    type="text"
+                    placeholder="Ej: Black Friday, Liquidación..."
+                    value={offerLabel}
+                    onChange={e => setOfferLabel(e.target.value)}
+                    maxLength={100}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-orange-600" />
+                    Fecha fin (opcional)
+                  </label>
+                  <Input
+                    type="datetime-local"
+                    value={offerEnd}
+                    onChange={e => setOfferEnd(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">Deja vacío para oferta sin fecha límite</p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setOfferModal({ open: false, product: null })}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  className="flex-1 bg-orange-600 hover:bg-orange-700 text-white"
+                  onClick={handleSaveOffer}
+                  disabled={savingOffer || !offerPrice || parseFloat(offerPrice) <= 0}
+                >
+                  {savingOffer ? (
+                    <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+                  ) : (
+                    <Flame className="h-4 w-4 mr-2" />
+                  )}
+                  {savingOffer ? 'Guardando...' : 'Activar Oferta'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </div>
   )
