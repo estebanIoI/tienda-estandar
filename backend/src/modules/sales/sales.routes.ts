@@ -62,6 +62,10 @@ router.post(
       .optional()
       .isFloat({ min: 0, max: 100 })
       .withMessage('El descuento debe estar entre 0 y 100'),
+    body('items.*.customAmount')
+      .optional()
+      .isFloat({ gt: 0 })
+      .withMessage('El monto personalizado debe ser mayor a 0'),
     body('paymentMethod')
       .isIn(['efectivo', 'tarjeta', 'transferencia', 'fiado'])
       .withMessage('Metodo de pago invalido'),

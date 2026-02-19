@@ -184,7 +184,53 @@ const fieldMap: Record<string, string> = {
   safetyWarnings: 'safety_warnings',
 };
 
+interface RecipeRow extends RowDataPacket {
+  product_id: string;
+  ingredient_id: string;
+  quantity: number;
+  ingredient_stock: number;
+}
+
 export class ProductsService {
+  private async enrichWithBOMStock(products: Product[], tenantId: string): Promise<Product[]> {
+    let recipes: RecipeRow[];
+    try {
+      const [rows] = await db.execute<RecipeRow[]>(
+        `SELECT pr.product_id, pr.ingredient_id, pr.quantity, p.stock as ingredient_stock
+         FROM product_recipes pr
+         JOIN products p ON p.id = pr.ingredient_id
+         WHERE pr.tenant_id = ?`,
+        [tenantId]
+      );
+      recipes = rows;
+    } catch {
+      // Table product_recipes may not exist yet
+      return products;
+    }
+
+    if (recipes.length === 0) return products;
+
+    const recipeMap = new Map<string, Array<{ ingredientStock: number; quantity: number }>>();
+    for (const r of recipes) {
+      if (!recipeMap.has(r.product_id)) recipeMap.set(r.product_id, []);
+      recipeMap.get(r.product_id)!.push({
+        ingredientStock: r.ingredient_stock,
+        quantity: Number(r.quantity),
+      });
+    }
+
+    return products.map(p => {
+      const recipe = recipeMap.get(p.id);
+      if (recipe && recipe.length > 0) {
+        const availableStock = Math.floor(
+          Math.min(...recipe.map(i => i.ingredientStock / i.quantity))
+        );
+        return { ...p, stock: availableStock, isComposite: true };
+      }
+      return p;
+    });
+  }
+
   private mapProduct(row: ProductRow): Product {
     return {
       id: row.id,
@@ -339,8 +385,11 @@ export class ProductsService {
       [...values, String(limit), String(offset)]
     );
 
+    const mappedProducts = rows.map(this.mapProduct);
+    const enrichedProducts = await this.enrichWithBOMStock(mappedProducts, tenantId);
+
     return {
-      data: rows.map(this.mapProduct),
+      data: enrichedProducts,
       pagination: {
         page,
         limit,
@@ -361,7 +410,12 @@ export class ProductsService {
       throw new AppError('Producto no encontrado', 404);
     }
 
-    return this.mapProduct(rows[0]);
+    const product = this.mapProduct(rows[0]);
+    if (tenantId) {
+      const [enriched] = await this.enrichWithBOMStock([product], tenantId);
+      return enriched;
+    }
+    return product;
   }
 
   async findBySku(sku: string, tenantId?: string): Promise<Product> {

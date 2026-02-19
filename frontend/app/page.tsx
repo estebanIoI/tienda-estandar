@@ -20,6 +20,7 @@ import { LandingPage } from '@/components/landing-page'
 import { Tienda } from '@/components/tienda'
 import { Pedidos } from '@/components/pedidos'
 import { Cupones } from '@/components/cupones'
+import { Recipes } from '@/components/recipes'
 
 export default function Home() {
   const { activeSection, setActiveSection } = useStore()
@@ -73,6 +74,8 @@ export default function Home() {
         return <Pedidos />
       case 'cupones':
         return <Cupones />
+      case 'recipes':
+        return <Recipes />
       case 'pos':
         return <PointOfSale />
       case 'cash-register':

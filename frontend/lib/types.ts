@@ -93,6 +93,8 @@ export interface Product {
   packageDimensions?: string
   packageContents?: string
   safetyWarnings?: string
+  // BOM / Producto Compuesto
+  isComposite?: boolean
   // Ofertas
   isOnOffer?: boolean
   offerPrice?: number | null
@@ -107,6 +109,7 @@ export interface CartItem {
   product: Product
   quantity: number
   discount: number
+  customAmount?: number
 }
 
 export interface Sale {

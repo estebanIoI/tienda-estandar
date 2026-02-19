@@ -131,6 +131,7 @@ export interface Product {
   createdAt: Date;
   updatedAt: Date;
   stockStatus?: StockStatus;
+  isComposite?: boolean;
 }
 
 export interface Customer {

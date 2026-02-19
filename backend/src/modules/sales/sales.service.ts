@@ -68,6 +68,7 @@ export interface CreateSaleItem {
   productId: string;
   quantity: number;
   discount?: number;
+  customAmount?: number;
 }
 
 export interface CreateSaleData {
@@ -293,8 +294,89 @@ export class SalesService {
 
         const product = productRows[0];
 
-        if (product.stock < item.quantity) {
-          throw new AppError(`Stock insuficiente para ${product.name}`, 400);
+        // Verificar si es un producto compuesto (tiene receta/BOM)
+        let recipeRows: RowDataPacket[] = [];
+        try {
+          const [rows] = await connection.execute<RowDataPacket[]>(
+            `SELECT pr.ingredient_id, pr.quantity, p.purchase_price
+             FROM product_recipes pr
+             JOIN products p ON p.id = pr.ingredient_id
+             WHERE pr.product_id = ?`,
+            [item.productId]
+          );
+          recipeRows = rows;
+        } catch {
+          // Table product_recipes may not exist yet
+        }
+
+        // Identificar ingrediente escalable y calcular cantidades extra si hay customAmount
+        let scalableIngredientId: string | null = null;
+        let extraScalableQty = 0;
+
+        if (recipeRows.length > 0 && item.customAmount) {
+          // Obtener sale_price para validar monto minimo
+          const [checkPrice] = await connection.execute<RowDataPacket[]>(
+            'SELECT sale_price FROM products WHERE id = ?',
+            [item.productId]
+          );
+          const baseSalePrice = Number(checkPrice[0].sale_price);
+          const minAmount = Math.round(baseSalePrice * (1 + TAX_RATE));
+
+          if (item.customAmount < minAmount) {
+            throw new AppError(
+              `El monto personalizado ($${item.customAmount}) no puede ser menor al precio base ($${minAmount})`,
+              400
+            );
+          }
+
+          // Encontrar ingrediente escalable (el de mayor quantity con quantity > 1)
+          let maxCostValue = 0;
+          for (const ing of recipeRows) {
+            const qty = Number(ing.quantity);
+            if (qty > 1) {
+              const costValue = qty * Number(ing.purchase_price);
+              if (costValue > maxCostValue) {
+                maxCostValue = costValue;
+                scalableIngredientId = ing.ingredient_id;
+              }
+            }
+          }
+
+          if (scalableIngredientId) {
+            const scalableIng = recipeRows.find(r => r.ingredient_id === scalableIngredientId)!;
+            const customSinIVA = item.customAmount / (1 + TAX_RATE);
+            const extraAmount = customSinIVA - baseSalePrice;
+            extraScalableQty = extraAmount / Number(scalableIng.purchase_price);
+          }
+        }
+
+        // Si tiene receta, validar stock de INSUMOS. Si no, validar stock del PRODUCTO.
+        if (recipeRows.length > 0) {
+          // Validar stock de ingredientes
+          for (const ingredient of recipeRows) {
+            let requiredQty = Number(ingredient.quantity) * item.quantity;
+            // Sumar cantidad extra para el ingrediente escalable
+            if (ingredient.ingredient_id === scalableIngredientId) {
+              requiredQty += extraScalableQty * item.quantity;
+            }
+            const [ingStockRows] = await connection.execute<ProductStockRow[]>(
+              'SELECT stock, name FROM products WHERE id = ? FOR UPDATE',
+              [ingredient.ingredient_id]
+            );
+
+            if (ingStockRows.length === 0) {
+              throw new AppError(`Insumo no encontrado para el producto compuesto`, 404);
+            }
+
+            if (ingStockRows[0].stock < requiredQty) {
+              throw new AppError(`Stock insuficiente de insumo ${ingStockRows[0].name} para armar ${product.name}`, 400);
+            }
+          }
+        } else {
+          // Validacion normal
+          if (product.stock < item.quantity) {
+            throw new AppError(`Stock insuficiente para ${product.name}`, 400);
+          }
         }
 
         // Obtener precio del producto
@@ -303,7 +385,14 @@ export class SalesService {
           [item.productId]
         );
 
-        const unitPrice = Number(priceRows[0].sale_price);
+        // Si hay customAmount para BOM, usar ese precio (sin IVA)
+        let unitPrice: number;
+        if (item.customAmount && recipeRows.length > 0) {
+          unitPrice = Math.round((item.customAmount / (1 + TAX_RATE)) * 100) / 100;
+        } else {
+          unitPrice = Number(priceRows[0].sale_price);
+        }
+
         const itemTotal = unitPrice * item.quantity;
         const itemDiscount = itemTotal * ((item.discount || 0) / 100);
         const itemSubtotal = itemTotal - itemDiscount;
@@ -322,32 +411,73 @@ export class SalesService {
           subtotal: itemSubtotal,
         });
 
-        // Actualizar stock
-        await connection.execute(
-          'UPDATE products SET stock = stock - ? WHERE id = ?',
-          [item.quantity, item.productId]
-        );
+        // DESCONTAR STOCK
+        if (recipeRows.length > 0) {
+          // Descontar INSUMOS (Logica BOM/Kit)
+          for (const ingredient of recipeRows) {
+            let requiredQty = Number(ingredient.quantity) * item.quantity;
+            // Sumar cantidad extra para el ingrediente escalable
+            if (ingredient.ingredient_id === scalableIngredientId) {
+              requiredQty += extraScalableQty * item.quantity;
+            }
+            requiredQty = Math.round(requiredQty * 1000) / 1000; // Redondear a 3 decimales
 
-        // Registrar movimiento de stock
-        await connection.execute(
-          `INSERT INTO stock_movements (id, tenant_id, product_id, type, quantity, previous_stock, new_stock, reason, reference_id, user_id)
-           VALUES (?, ?, ?, 'venta', ?, ?, ?, ?, ?, ?)`,
-          [
-            uuidv4(),
-            tenantId,
-            item.productId,
-            item.quantity,
-            product.stock,
-            product.stock - item.quantity,
-            `Venta ${invoiceNumber}`,
-            null,
-            data.sellerId,
-          ]
-        );
+            const [ingStockRows] = await connection.execute<ProductStockRow[]>(
+              'SELECT stock FROM products WHERE id = ?',
+              [ingredient.ingredient_id]
+            );
+            const currentIngStock = ingStockRows[0].stock;
+
+            await connection.execute(
+              'UPDATE products SET stock = stock - ? WHERE id = ?',
+              [requiredQty, ingredient.ingredient_id]
+            );
+
+            // Registrar movimiento de insumo
+            await connection.execute(
+              `INSERT INTO stock_movements (id, tenant_id, product_id, type, quantity, previous_stock, new_stock, reason, reference_id, user_id)
+                   VALUES (?, ?, ?, 'venta', ?, ?, ?, ?, ?, ?)`,
+              [
+                uuidv4(),
+                tenantId,
+                ingredient.ingredient_id,
+                requiredQty,
+                currentIngStock,
+                currentIngStock - requiredQty,
+                `Prod. Auto ${invoiceNumber}`, // Produccion Automatica
+                null,
+                data.sellerId,
+              ]
+            );
+          }
+        } else {
+          // Descontar PRODUCTO FINAL (Logica Normal)
+          await connection.execute(
+            'UPDATE products SET stock = stock - ? WHERE id = ?',
+            [item.quantity, item.productId]
+          );
+
+          // Registrar movimiento de stock
+          await connection.execute(
+            `INSERT INTO stock_movements (id, tenant_id, product_id, type, quantity, previous_stock, new_stock, reason, reference_id, user_id)
+               VALUES (?, ?, ?, 'venta', ?, ?, ?, ?, ?, ?)`,
+            [
+              uuidv4(),
+              tenantId,
+              item.productId,
+              item.quantity,
+              product.stock,
+              product.stock - item.quantity,
+              `Venta ${invoiceNumber}`,
+              null,
+              data.sellerId,
+            ]
+          );
+        }
       }
 
-      const tax = subtotal * TAX_RATE;
-      const total = subtotal + tax;
+      const tax = Math.round(subtotal * TAX_RATE * 100) / 100;
+      const total = Math.round((subtotal + tax) * 100) / 100;
 
       // Para fiado: amountPaid = 0, change = 0
       let amountPaid = data.amountPaid;
@@ -366,9 +496,11 @@ export class SalesService {
         due.setDate(due.getDate() + days);
         dueDate = due.toISOString().split('T')[0];
       } else {
-        change = amountPaid - total;
+        // Redondear a 2 decimales para evitar errores por centavos
+        const roundedTotal = Math.round(total * 100) / 100;
+        change = Math.round((amountPaid - roundedTotal) * 100) / 100;
         if (change < 0) {
-          throw new AppError('El monto pagado es insuficiente', 400);
+          throw new AppError(`El monto pagado es insuficiente. Total: $${roundedTotal}, Pagado: $${amountPaid}`, 400);
         }
       }
 
@@ -424,6 +556,7 @@ export class SalesService {
       return this.findById(saleId);
     } catch (error) {
       await connection.rollback();
+      console.error('[SalesService.create] Error:', error instanceof AppError ? error.message : error);
       throw error;
     } finally {
       connection.release();
