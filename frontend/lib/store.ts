@@ -25,6 +25,7 @@ interface AppState {
   removeFromCart: (productId: string) => void
   updateCartQuantity: (productId: string, quantity: number) => void
   applyItemDiscount: (productId: string, discount: number) => void
+  setCustomAmount: (productId: string, amount: number) => void
   clearCart: () => void
 
   // Sales
@@ -32,7 +33,7 @@ interface AppState {
   isLoadingSales: boolean
   fetchSales: () => Promise<void>
   addSale: (sale: {
-    items: Array<{ productId: string; quantity: number; discount?: number }>
+    items: Array<{ productId: string; quantity: number; discount?: number; customAmount?: number }>
     paymentMethod: string
     amountPaid: number
     customerId?: string
@@ -204,6 +205,12 @@ export const useStore = create<AppState>()(
         )
       })),
 
+      setCustomAmount: (productId, amount) => set((state) => ({
+        cart: state.cart.map(item =>
+          item.product.id === productId ? { ...item, customAmount: amount } : item
+        )
+      })),
+
       clearCart: () => set({ cart: [] }),
 
       // Sales Actions
@@ -356,6 +363,10 @@ export const getStockStatus = (product: Product): 'suficiente' | 'bajo' | 'agota
 
 export const calculateCartTotals = (cart: CartItem[]) => {
   const subtotal = cart.reduce((sum, item) => {
+    if (item.customAmount) {
+      // customAmount es con IVA, convertir a sin IVA para el subtotal
+      return sum + (item.customAmount / 1.19) * item.quantity
+    }
     const itemTotal = (item.product.salePrice * item.quantity) - item.discount
     return sum + itemTotal
   }, 0)

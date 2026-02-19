@@ -19,6 +19,7 @@ import {
   Store,
   ClipboardList,
   Ticket,
+  FlaskConical,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
@@ -29,6 +30,7 @@ const navigation = [
   { id: 'tienda', name: 'Tienda', icon: Store, adminOnly: true },
   { id: 'pedidos', name: 'Pedidos', icon: ClipboardList, adminOnly: true },
   { id: 'cupones', name: 'Cupones', icon: Ticket, adminOnly: true },
+  { id: 'recipes', name: 'Recetas BOM', icon: FlaskConical, adminOnly: true },
   { id: 'pos', name: 'Punto de Venta', icon: ShoppingCart, adminOnly: false },
   { id: 'cash-register', name: 'Caja', icon: Vault, adminOnly: false },
   { id: 'invoices', name: 'Facturación', icon: Receipt, adminOnly: true },

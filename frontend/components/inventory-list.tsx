@@ -643,7 +643,7 @@ function ProductFormDialog({
                     id="purchasePrice"
                     type="number"
                     min="0"
-                    step="1"
+                    step="0.01"
                     placeholder="50000"
                     value={formData.purchasePrice || ''}
                     onChange={(e) => updateField('purchasePrice', parseFloat(e.target.value) || 0)}
@@ -653,19 +653,18 @@ function ProductFormDialog({
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="salePrice">Precio de venta (COP) *</Label>
+                <Label htmlFor="salePrice">Precio de venta (COP) {formData.category !== 'insumos' && '*'}</Label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
                   <Input
                     id="salePrice"
                     type="number"
                     min="0"
-                    step="1"
-                    placeholder="249999"
+                    step="0.01"
+                    placeholder={formData.category === 'insumos' ? '0' : '249999'}
                     value={formData.salePrice || ''}
                     onChange={(e) => updateField('salePrice', parseFloat(e.target.value) || 0)}
                     className="pl-7"
-                    required
                   />
                 </div>
               </div>

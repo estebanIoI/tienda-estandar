@@ -340,6 +340,25 @@ CREATE TABLE IF NOT EXISTS sale_items (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================
+-- TABLA: product_recipes (Recetas BOM - Productos Compuestos)
+-- Permite definir insumos necesarios para armar un producto terminado
+-- Ejemplo: Perfume 100ML = 43 Extracto + 1 Envase 100 + 1 Caja 100
+-- ============================================
+CREATE TABLE IF NOT EXISTS product_recipes (
+    id VARCHAR(36) PRIMARY KEY,
+    tenant_id VARCHAR(36) NOT NULL,
+    product_id VARCHAR(36) NOT NULL,
+    ingredient_id VARCHAR(36) NOT NULL,
+    quantity DECIMAL(10,3) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+    FOREIGN KEY (ingredient_id) REFERENCES products(id) ON DELETE RESTRICT,
+    INDEX idx_recipe_product (product_id),
+    INDEX idx_recipe_tenant (tenant_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================
 -- TABLA: stock_movements (Movimientos de stock)
 -- ============================================
 CREATE TABLE IF NOT EXISTS stock_movements (
@@ -1110,10 +1129,98 @@ CREATE TABLE IF NOT EXISTS storefront_order_items (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================
+-- DATOS SEED: SISTEMA DE PERFUMES BOM (Productos Compuestos)
+-- Permite vender perfumes por referencia (30ML, 50ML, 100ML)
+-- y descontar automaticamente insumos (extracto, envase, caja)
+-- ============================================
+
+-- Categorias para perfumes e insumos
+INSERT IGNORE INTO categories (id, tenant_id, name, description) VALUES
+('perfumes', 'tenant-demo-001', 'Perfumes', 'Perfumes terminados por referencia'),
+('insumos', 'tenant-demo-001', 'Insumos', 'Materia prima para produccion');
+
+-- Variables para IDs deterministas
+SET @tenant = 'tenant-demo-001' COLLATE utf8mb4_unicode_ci;
+
+-- IDs de Productos Terminados (Perfumes)
+SET @id_p100 = 'PERF-LW-100-ID' COLLATE utf8mb4_unicode_ci;
+SET @id_p50  = 'PERF-LW-050-ID' COLLATE utf8mb4_unicode_ci;
+SET @id_p30  = 'PERF-LW-030-ID' COLLATE utf8mb4_unicode_ci;
+
+-- IDs de Insumos (Materia Prima)
+SET @id_extracto = 'MAT-EXT-LW-ID' COLLATE utf8mb4_unicode_ci;
+SET @id_env_100  = 'MAT-ENV-100-ID' COLLATE utf8mb4_unicode_ci;
+SET @id_env_50   = 'MAT-ENV-050-ID' COLLATE utf8mb4_unicode_ci;
+SET @id_env_30   = 'MAT-ENV-030-ID' COLLATE utf8mb4_unicode_ci;
+SET @id_caja_100 = 'MAT-BOX-100-ID' COLLATE utf8mb4_unicode_ci;
+SET @id_caja_50  = 'MAT-BOX-050-ID' COLLATE utf8mb4_unicode_ci;
+SET @id_caja_30  = 'MAT-BOX-030-ID' COLLATE utf8mb4_unicode_ci;
+
+-- Limpiar datos previos si existen (para re-ejecutar sin duplicados)
+DELETE FROM product_recipes WHERE tenant_id = @tenant AND product_id IN (@id_p100, @id_p50, @id_p30);
+DELETE FROM products WHERE tenant_id = @tenant AND id IN (@id_p100, @id_p50, @id_p30, @id_extracto, @id_env_100, @id_env_50, @id_env_30, @id_caja_100, @id_caja_50, @id_caja_30);
+
+-- INSUMOS (Materia Prima) - No se venden directamente, solo se consumen via BOM
+-- Extracto base - Costo unitario $1,700
+INSERT INTO products (id, tenant_id, name, category, product_type, brand, purchase_price, sale_price, sku, stock, reorder_point, entry_date, description)
+VALUES
+(@id_extracto, @tenant, 'Extracto Larry White (Unidad Base)', 'insumos', 'otros', 'Larry White', 1700, 0, 'MAT-EXT-LW', 5000, 100, CURDATE(), 'Insumo base para perfumes - No venta directa');
+
+-- Envases por tamaño
+INSERT INTO products (id, tenant_id, name, category, product_type, brand, purchase_price, sale_price, sku, stock, reorder_point, entry_date, description) VALUES
+(@id_env_100, @tenant, 'Envase Vidrio 100ML', 'insumos', 'otros', 'Generico', 1900, 0, 'MAT-ENV-100', 500, 20, CURDATE(), 'Envase para perfume 100ML'),
+(@id_env_50,  @tenant, 'Envase Vidrio 50ML',  'insumos', 'otros', 'Generico', 600,  0, 'MAT-ENV-050', 500, 20, CURDATE(), 'Envase para perfume 50ML'),
+(@id_env_30,  @tenant, 'Envase Vidrio 30ML',  'insumos', 'otros', 'Generico', 400,  0, 'MAT-ENV-030', 500, 20, CURDATE(), 'Envase para perfume 30ML');
+
+-- Cajas por tamaño
+INSERT INTO products (id, tenant_id, name, category, product_type, brand, purchase_price, sale_price, sku, stock, reorder_point, entry_date, description) VALUES
+(@id_caja_100, @tenant, 'Caja Perfume 100ML', 'insumos', 'otros', 'Larry White', 0, 0, 'MAT-BOX-100', 500, 20, CURDATE(), 'Caja para perfume 100ML'),
+(@id_caja_50,  @tenant, 'Caja Perfume 50ML',  'insumos', 'otros', 'Larry White', 0, 0, 'MAT-BOX-050', 500, 20, CURDATE(), 'Caja para perfume 50ML'),
+(@id_caja_30,  @tenant, 'Caja Perfume 30ML',  'insumos', 'otros', 'Larry White', 0, 0, 'MAT-BOX-030', 500, 20, CURDATE(), 'Caja para perfume 30ML');
+
+-- PRODUCTOS TERMINADOS (Perfumes por referencia)
+-- Precios: sale_price = precio_referencia / 1.19 (para que con IVA 19% quede el precio correcto)
+-- 100ML: $75,000 / 1.19 = $63,025.21
+-- 50ML:  $38,000 / 1.19 = $31,932.77
+-- 30ML:  $22,000 / 1.19 = $18,487.39
+-- Stock = 0 porque se arman automaticamente desde insumos (BOM)
+INSERT INTO products (id, tenant_id, name, category, product_type, brand, purchase_price, sale_price, sku, stock, reorder_point, entry_date, description)
+VALUES
+(@id_p100, @tenant, 'Perfume Larry White 100ML', 'perfumes', 'perfumes', 'Larry White', 75000, 63025.21, 'PERF-LW-100', 0, 0, CURDATE(), 'Referencia 100ML - Producto compuesto (BOM)'),
+(@id_p50,  @tenant, 'Perfume Larry White 50ML',  'perfumes', 'perfumes', 'Larry White', 38000, 31932.77, 'PERF-LW-050', 0, 0, CURDATE(), 'Referencia 50ML - Producto compuesto (BOM)'),
+(@id_p30,  @tenant, 'Perfume Larry White 30ML',  'perfumes', 'perfumes', 'Larry White', 22000, 18487.39, 'PERF-LW-030', 0, 0, CURDATE(), 'Referencia 30ML - Producto compuesto (BOM)');
+
+-- RECETAS BOM (Bill of Materials)
+-- Define cuantos insumos se necesitan para armar cada referencia
+
+-- Receta 100ML: 43 Extracto + 1 Envase 100ML + 1 Caja 100ML
+INSERT INTO product_recipes (id, tenant_id, product_id, ingredient_id, quantity) VALUES
+(UUID(), @tenant, @id_p100, @id_extracto, 43),
+(UUID(), @tenant, @id_p100, @id_env_100, 1),
+(UUID(), @tenant, @id_p100, @id_caja_100, 1);
+
+-- Receta 50ML: 22 Extracto + 1 Envase 50ML + 1 Caja 50ML
+INSERT INTO product_recipes (id, tenant_id, product_id, ingredient_id, quantity) VALUES
+(UUID(), @tenant, @id_p50, @id_extracto, 22),
+(UUID(), @tenant, @id_p50, @id_env_50, 1),
+(UUID(), @tenant, @id_p50, @id_caja_50, 1);
+
+-- Receta 30ML: 13 Extracto + 1 Envase 30ML + 1 Caja 30ML
+INSERT INTO product_recipes (id, tenant_id, product_id, ingredient_id, quantity) VALUES
+(UUID(), @tenant, @id_p30, @id_extracto, 13),
+(UUID(), @tenant, @id_p30, @id_env_30, 1),
+(UUID(), @tenant, @id_p30, @id_caja_30, 1);
+
+-- ============================================
 -- FIN DEL SCRIPT v3.0 Multi-Tenant
 -- ============================================
 -- CREDENCIALES POR DEFECTO:
 --   Superadmin:   superadmin@stockpro.com  / admin123
 --   Comerciante:  comerciante@stockpro.com / admin123
 --   Vendedor:     vendedor@stockpro.com    / admin123
+-- ============================================
+-- PERFUMES BOM:
+--   Perfume Larry White 100ML → $75,000 con IVA (43 extractos + envase + caja)
+--   Perfume Larry White 50ML  → $38,000 con IVA (22 extractos + envase + caja)
+--   Perfume Larry White 30ML  → $22,000 con IVA (13 extractos + envase + caja)
 -- ============================================

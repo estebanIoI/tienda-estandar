@@ -21,6 +21,7 @@ import { tenantsRoutes } from './modules/tenants';
 import { storefrontRoutes } from './modules/storefront';
 import { ordersRoutes } from './modules/orders';
 import { couponsRoutes } from './modules/coupons';
+import { recipesRoutes } from './modules/recipes';
 
 const app = express();
 
@@ -57,6 +58,7 @@ app.use(`${apiPrefix}/tenants`, tenantsRoutes);
 app.use(`${apiPrefix}/storefront`, storefrontRoutes);
 app.use(`${apiPrefix}/orders`, ordersRoutes);
 app.use(`${apiPrefix}/coupons`, couponsRoutes);
+app.use(`${apiPrefix}/recipes`, recipesRoutes);
 
 // Error handling
 app.use(notFoundHandler);

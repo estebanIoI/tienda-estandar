@@ -251,7 +251,7 @@ class ApiService {
   }
 
   async createSale(sale: {
-    items: Array<{ productId: string; quantity: number; discount?: number }>
+    items: Array<{ productId: string; quantity: number; discount?: number; customAmount?: number }>
     paymentMethod: string
     amountPaid: number
     customerId?: string
@@ -641,6 +641,28 @@ class ApiService {
     return this.request<any>('/coupons/use', {
       method: 'POST',
       body: JSON.stringify({ code }),
+    })
+  }
+
+  // Recipes endpoints
+  async getRecipes() {
+    return this.request<any[]>('/recipes')
+  }
+
+  async getRecipe(productId: string) {
+    return this.request<any>(`/recipes/${productId}`)
+  }
+
+  async saveRecipe(productId: string, ingredients: Array<{ ingredientId: string; quantity: number }>) {
+    return this.request<any>('/recipes', {
+      method: 'POST',
+      body: JSON.stringify({ productId, ingredients }),
+    })
+  }
+
+  async deleteRecipe(productId: string) {
+    return this.request<any>(`/recipes/${productId}`, {
+      method: 'DELETE',
     })
   }
 }

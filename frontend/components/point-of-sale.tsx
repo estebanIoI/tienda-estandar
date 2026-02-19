@@ -57,7 +57,7 @@ import { BarcodeScanner } from '@/components/barcode-scanner'
 import { RemoteScanner } from '@/components/remote-scanner'
 
 export function PointOfSale() {
-  const { products, fetchProducts, cart, addToCart, removeFromCart, updateCartQuantity, applyItemDiscount, clearCart, addSale, storeInfo, selectedCustomer, setSelectedCustomer, categories, fetchCategories } = useStore()
+  const { products, fetchProducts, cart, addToCart, removeFromCart, updateCartQuantity, applyItemDiscount, setCustomAmount, clearCart, addSale, storeInfo, selectedCustomer, setSelectedCustomer, categories, fetchCategories } = useStore()
   const [search, setSearch] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -154,8 +154,9 @@ export function PointOfSale() {
   const finalTotal = total - globalDiscount
   const change = paymentMethod === 'efectivo' ? Math.max(0, parseFloat(amountPaid || '0') - finalTotal) : 0
   
-  // Filter products available for sale
+  // Filter products available for sale (exclude raw materials/insumos)
   const availableProducts = products.filter(p => {
+    if (p.category === 'insumos') return false
     const matchesSearch =
       p.name.toLowerCase().includes(search.toLowerCase()) ||
       p.sku.toLowerCase().includes(search.toLowerCase()) ||
@@ -410,6 +411,7 @@ export function PointOfSale() {
       productId: item.product.id,
       quantity: item.quantity,
       discount: item.discount,
+      ...(item.customAmount ? { customAmount: item.customAmount } : {}),
     }))
 
     const result = await addSale({
@@ -479,8 +481,8 @@ export function PointOfSale() {
                 <Package className="h-3 w-3 lg:h-4 lg:w-4 mr-1.5" />
                 Todas
               </Button>
-              {categories.map((cat) => {
-                const count = products.filter(p => p.category === cat.id && p.stock > 0).length
+              {categories.filter(cat => cat.id !== 'insumos').map((cat) => {
+                const count = products.filter(p => p.category === cat.id && p.category !== 'insumos' && p.stock > 0).length
                 return (
                   <Button
                     key={cat.id}
@@ -530,9 +532,16 @@ export function PointOfSale() {
                       {/* Top section with product name and quantity badge */}
                       <div className="flex items-start justify-between gap-1 sm:gap-2 mb-1.5 sm:mb-2">
                         <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-foreground truncate text-xs sm:text-sm lg:text-base">
-                            {product.name}
-                          </p>
+                          <div className="flex items-center gap-1">
+                            <p className="font-semibold text-foreground truncate text-xs sm:text-sm lg:text-base">
+                              {product.name}
+                            </p>
+                            {product.isComposite && (
+                              <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-blue-400 text-blue-600 flex-shrink-0">
+                                Ref
+                              </Badge>
+                            )}
+                          </div>
                           {product.brand && (
                           <p className="text-[10px] sm:text-xs lg:text-sm text-muted-foreground truncate">
                             {product.brand}
@@ -676,6 +685,27 @@ export function PointOfSale() {
                         <Trash2 className="h-3 w-3 sm:h-4 sm:w-4" />
                       </Button>
                     </div>
+                    {item.product.isComposite && (
+                      <div className="flex items-center gap-2 mt-2 rounded bg-blue-50 dark:bg-blue-950/30 px-2 py-1.5">
+                        <span className="text-[10px] sm:text-xs text-blue-600 dark:text-blue-400 font-medium whitespace-nowrap">Monto $</span>
+                        <Input
+                          type="number"
+                          step="1000"
+                          min={Math.round(item.product.salePrice * 1.19)}
+                          value={item.customAmount ?? Math.round(item.product.salePrice * 1.19)}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value)
+                            const minAmount = Math.round(item.product.salePrice * 1.19)
+                            if (!isNaN(val) && val >= minAmount) {
+                              setCustomAmount(item.product.id, val)
+                            } else if (e.target.value === '') {
+                              setCustomAmount(item.product.id, minAmount)
+                            }
+                          }}
+                          className="h-7 flex-1 text-xs"
+                        />
+                      </div>
+                    )}
                     <div className="flex items-center justify-between mt-2 sm:mt-3">
                       <div className="flex items-center gap-1.5 sm:gap-2">
                         <Button
@@ -700,7 +730,10 @@ export function PointOfSale() {
                         </Button>
                       </div>
                       <span className="text-xs sm:text-sm lg:text-base font-semibold text-foreground">
-                        {formatCOP((item.product.salePrice * item.quantity) - item.discount)}
+                        {item.customAmount
+                          ? formatCOP(item.customAmount * item.quantity)
+                          : formatCOP((item.product.salePrice * item.quantity) - item.discount)
+                        }
                       </span>
                     </div>
                   </div>
