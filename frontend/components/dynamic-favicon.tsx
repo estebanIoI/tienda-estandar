@@ -5,7 +5,7 @@ import { api } from '@/lib/api'
 
 export function DynamicFavicon() {
   useEffect(() => {
-    api.getStoreConfig().then((res) => {
+    api.getStoreCustomization().then((res) => {
       const logoUrl = res?.data?.storeInfo?.logoUrl
       if (!logoUrl) return
 
