@@ -453,19 +453,19 @@ export function Pedidos() {
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <User className="h-3 w-3" /> {order.customerName}
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-sm text-muted-foreground">
+                      <span className="flex items-center gap-1 min-w-0">
+                        <User className="h-3 w-3 flex-shrink-0" /> <span className="truncate max-w-[120px] sm:max-w-none">{order.customerName}</span>
                       </span>
-                      <span className="flex items-center gap-1">
+                      <span className="flex items-center gap-1 flex-shrink-0">
                         <Phone className="h-3 w-3" /> {order.customerPhone}
                       </span>
                     </div>
                   </div>
 
-                  <div className="text-right flex-shrink-0">
-                    <p className="font-bold text-primary">{formatCurrency(order.total)}</p>
-                    <p className="text-xs text-muted-foreground">{formatDate(order.createdAt)}</p>
+                  <div className="text-right flex-shrink-0 max-w-[100px] sm:max-w-none">
+                    <p className="font-bold text-primary text-sm sm:text-base">{formatCurrency(order.total)}</p>
+                    <p className="text-xs text-muted-foreground leading-tight">{formatDate(order.createdAt)}</p>
                   </div>
 
                   {isExpanded ? (
@@ -601,7 +601,7 @@ export function Pedidos() {
 
                     {/* Totals */}
                     <div className="flex justify-end">
-                      <div className="w-64 space-y-1 text-sm">
+                      <div className="w-full sm:w-64 space-y-1 text-sm">
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Subtotal</span>
                           <span>{formatCurrency(order.subtotal)}</span>
@@ -648,7 +648,7 @@ export function Pedidos() {
                     )}
 
                     {/* Actions */}
-                    <div className="flex items-center gap-2 pt-2 border-t">
+                    <div className="flex flex-wrap items-center gap-2 pt-2 border-t">
                       {/* Print Ticket Button */}
                       <Button size="sm" variant="outline" onClick={() => printOrderTicket(order)}>
                         <FileText className="h-4 w-4 mr-2" /> Generar Ticket
