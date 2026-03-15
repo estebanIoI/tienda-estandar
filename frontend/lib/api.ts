@@ -16,7 +16,7 @@ class ApiService {
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
-  ): Promise<{ success: boolean; data?: T; error?: string; message?: string }> {
+  ): Promise<{ success: boolean; data?: T; error?: string; message?: string; pagination?: any }> {
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
       ...(options.headers || {}),
