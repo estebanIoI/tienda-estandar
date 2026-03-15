@@ -1325,7 +1325,7 @@ class ApiService {
   async updateChatbotConfig(data: {
     botName?: string; botAvatarUrl?: string; systemPrompt?: string;
     businessInfo?: string; faqs?: string; tone?: string;
-    notifyEmail?: boolean; notifyWhatsapp?: boolean;
+    notifyEmail?: boolean; notifyWhatsapp?: boolean; accentColor?: string;
   }) {
     return this.request<any>('/chatbot/config', {
       method: 'PUT',
