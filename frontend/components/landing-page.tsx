@@ -4537,16 +4537,17 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
             </div>
 
             {/* Ubicación en mapa */}
-            {storeConfig.storeInfo?.locationMapUrl && (
-              <div className="mt-6 rounded-xl overflow-hidden border border-white/10">
-                <iframe
-                  src={storeConfig.storeInfo.locationMapUrl.replace('/maps/', '/maps/embed/v1/').includes('embed') ? storeConfig.storeInfo.locationMapUrl : `https://maps.google.com/maps?q=${encodeURIComponent(storeConfig.storeInfo.address || '')}&output=embed`}
-                  className="w-full h-48 sm:h-64"
-                  style={{ border: 0, filter: 'grayscale(0.3) invert(0.1)' }}
-                  allowFullScreen
-                  loading="lazy"
-                  referrerPolicy="no-referrer-when-downgrade"
-                />
+            {storeConfig.storeInfo?.address && (
+              <div className="mt-6">
+                <a
+                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(storeConfig.storeInfo.address)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 px-4 py-3 rounded-xl border border-white/10 hover:border-amber-400/40 hover:bg-white/5 transition-all duration-300 group"
+                >
+                  <MapPin className="w-5 h-5 text-amber-400 shrink-0" />
+                  <span className="text-white/70 group-hover:text-white text-sm transition-colors">{storeConfig.storeInfo.address}</span>
+                </a>
               </div>
             )}
           </div>
@@ -5124,7 +5125,7 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                 )}
               </div>
 
-              {/* Mapa interactivo — solo si hay dirección */}
+              {/* Ubicación — enlace a Google Maps */}
               {storeConfig.storeInfo.address && (
                 <div className="space-y-3 col-span-2 md:col-span-1">
                   <h4 className="text-xs text-white/50 uppercase tracking-[0.2em] font-medium">Ubicación</h4>
@@ -5132,25 +5133,12 @@ export function LandingPage({ onGoToLogin }: LandingPageProps) {
                     href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(storeConfig.storeInfo.address)}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="block group relative overflow-hidden rounded-lg border border-white/10 hover:border-amber-400/40 transition-all duration-300"
+                    className="flex items-center gap-3 px-4 py-3 rounded-lg border border-white/10 hover:border-amber-400/40 hover:bg-white/5 transition-all duration-300 group"
                     title="Abrir en Google Maps"
                   >
-                    <iframe
-                      title="Mapa de ubicación"
-                      src={`https://maps.google.com/maps?q=${encodeURIComponent(storeConfig.storeInfo.address)}&output=embed&z=15`}
-                      className="w-full h-32 md:h-36 pointer-events-none"
-                      loading="lazy"
-                      referrerPolicy="no-referrer-when-downgrade"
-                    />
-                    {/* Overlay con icono de Google Maps al hacer hover */}
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all duration-300 flex items-center justify-center">
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col items-center gap-1">
-                        <MapPin className="w-6 h-6 text-amber-400 drop-shadow-lg" />
-                        <span className="text-white text-xs font-medium drop-shadow-lg">Ver en Google Maps</span>
-                      </div>
-                    </div>
+                    <MapPin className="w-5 h-5 text-amber-400 shrink-0" />
+                    <span className="text-white/70 group-hover:text-white text-sm transition-colors">{storeConfig.storeInfo.address}</span>
                   </a>
-                  <p className="text-white/30 text-xs font-light leading-relaxed">{storeConfig.storeInfo.address}</p>
                 </div>
               )}
             </div>
